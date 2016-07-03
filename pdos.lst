@@ -1,0 +1,3334 @@
+ca65 V2.15 - Git 4531307
+Main file   : pdos.s
+Current file: pdos.s
+
+000000r 1               ;
+000000r 1               ;  pdos.s
+000000r 1               ;  Easily work with Prodos
+000000r 1               ;
+000000r 1               
+000000r 1               .org $2000
+002000  1               
+002000  1               ; Common definitions
+002000  1               
+002000  1               .include "zeropage.s"
+002000  2               ;
+002000  2               ;  zeropage.s
+002000  2               ;  Zero page information
+002000  2               ;
+002000  2               
+002000  2               POINTER			= $1d
+002000  2               POINTER2        = $fa
+002000  2               
+002000  2               PDPARAM0		= $19
+002000  2               PDPARAM1		= $1a
+002000  2               PDPARAM2		= $1b
+002000  2               PDPARAM3		= $1c
+002000  2               
+002000  2               SCRATCH0		= $eb
+002000  2               SCRATCH1		= $ec
+002000  2               
+002000  1               .include "prodosmli.s"
+002000  2               ;
+002000  2               ;  prodosmli.s
+002000  2               ;  Prodos MLI Information
+002000  2               ;
+002000  2               
+002000  2               ; Prodos MLI Entry Point
+002000  2               MLI                  = $BF00
+002000  2               
+002000  2               ; Prodos MLI Commands
+002000  2               
+002000  2               ;; Housekeeping Calls
+002000  2               MLICreate            = $C0
+002000  2               MLIDestroy           = $C1
+002000  2               MLIRename            = $C2
+002000  2               MLISetFileInfo       = $C3
+002000  2               MLIGetFileInfo       = $C4
+002000  2               MLIOnline            = $C5
+002000  2               MLISetPrefix         = $C6
+002000  2               MLIGetPrefix         = $C7
+002000  2               
+002000  2               ;; Filing Calls
+002000  2               MLIOpen              = $C8
+002000  2               MLINewline           = $C9
+002000  2               MLIRead              = $CA
+002000  2               MLIWrite             = $CB
+002000  2               MLIClose             = $CC
+002000  2               MLIFlush             = $CD
+002000  2               MLISetMark           = $CE
+002000  2               MLIGetMark           = $CF
+002000  2               MLISetEOF            = $D0
+002000  2               MLIGetEOF            = $D1
+002000  2               MLISetBuffer         = $D2
+002000  2               MLIGetBuffer         = $D3
+002000  2               
+002000  2               ;; System Calls
+002000  2               MLIGetTime           = $82
+002000  2               MLIAllocInterrupt    = $40
+002000  2               MLIDeallocInterrupt  = $41
+002000  2               
+002000  2               ;; Direct Disk Access Calls
+002000  2               MLIReadBlock         = $80
+002000  2               MLIWriteBlock        = $81
+002000  2               
+002000  2               ; Location of the Prodos Bitmap
+002000  2               MLIBitmap            = $BF58
+002000  2               
+002000  2               ; Location of Prodos Date and Time Bytes
+002000  2               MLIDate              = $BF90
+002000  2               MLITime              = $BF92
+002000  2               
+002000  1               .include "monitor.s"
+002000  2               ;
+002000  2               ;  monitor.s
+002000  2               ;  Monitor Routines
+002000  2               ;
+002000  2               
+002000  2               COUT                = $FDF0
+002000  2               PRBYTE				= $FDDA
+002000  2               
+002000  1               
+002000  1               ; Macros
+002000  1               
+002000  1               .include "macros.s"
+002000  2               ;
+002000  2               ;  macros.s
+002000  2               ;  Generally useful macros for 6502 code
+002000  2               ;
+002000  2               
+002000  2               ; Macros
+002000  2               
+002000  2               .macro SAVE_RETURN			; Saves return address
+002000  2               	pla
+002000  2               	sta MLILo
+002000  2               	pla
+002000  2               	sta MLIHi
+002000  2               .endmacro
+002000  2               
+002000  2               .macro RESTORE_RETURN		; Restores Return address
+002000  2               	lda MLIHi
+002000  2               	pha
+002000  2               	lda MLILo
+002000  2               	pha
+002000  2               .endmacro
+002000  2               
+002000  2               .macro SAVE_AXY				; Saves all registers
+002000  2               	pha
+002000  2               	phx
+002000  2               	phy
+002000  2               .endmacro
+002000  2               
+002000  2               .macro RESTORE_AXY			; Restores all registers
+002000  2               	ply
+002000  2               	plx
+002000  2               	pla
+002000  2               .endmacro
+002000  2               
+002000  2               
+002000  2               .macro SAVE_AY				; Saves accumulator and Y index
+002000  2               	pha
+002000  2               	phy
+002000  2               .endmacro
+002000  2               
+002000  2               
+002000  2               .macro RESTORE_AY			; Restores accumulator and Y index
+002000  2               	ply
+002000  2               	pla
+002000  2               .endmacro
+002000  2               
+002000  2               
+002000  2               .macro SAVE_AX				; Saves accumulator and X index
+002000  2               	pha
+002000  2               	phx
+002000  2               .endmacro
+002000  2               
+002000  2               
+002000  2               .macro RESTORE_AX			; Restores accumulator and X index
+002000  2               	plx
+002000  2               	pla
+002000  2               .endmacro
+002000  2               
+002000  2               
+002000  2               .macro SAVE_XY				; Saves X and Y index
+002000  2               	phx
+002000  2               	phy
+002000  2               .endmacro
+002000  2               
+002000  2               
+002000  2               .macro RESTORE_XY			; Restores X and Y index
+002000  2               	ply
+002000  2               	plx
+002000  2               .endmacro
+002000  2               
+002000  2               .macro WEEGUIPARAM addr
+002000  2               	lda #<addr
+002000  2               	sta PARAM0
+002000  2               	lda #>addr
+002000  2               	sta PARAM1
+002000  2               .endmacro
+002000  2               
+002000  2               .macro CallWeegui func,param
+002000  2               .ifnblank param
+002000  2               	WEEGUIPARAM param
+002000  2               .endif
+002000  2               	ldx #func
+002000  2               	jsr WeeGUI
+002000  2               .endmacro
+002000  2               
+002000  2               .macro PDPARAM addr
+002000  2               	lda #<addr
+002000  2               	sta PDPARAM0
+002000  2               	lda #>addr
+002000  2               	sta PDPARAM1
+002000  2               .endmacro
+002000  2               
+002000  2               
+002000  2               .macro CallPDos func,addr
+002000  2               	PDPARAM addr
+002000  2               	jsr func
+002000  2               .endmacro
+002000  2               
+002000  1               
+002000  1               ; WEEGUI
+002000  1               
+002000  1               .include "WeeGUI_MLI.s"
+002000  2               ;
+002000  2               ;  WeeGUI_MLI.s
+002000  2               ;  Machine Language API for WeeGUI
+002000  2               ;
+002000  2               ;  Created by Quinn Dunki on 8/15/14.
+002000  2               ;  Copyright (c) 2014 One Girl, One Laptop Productions. All rights reserved.
+002000  2               ;
+002000  2               
+002000  2               
+002000  2               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+002000  2               ; Reserved zero page locations
+002000  2               ;
+002000  2               PARAM0					= $06
+002000  2               PARAM1					= $07
+002000  2               PARAM2					= $08
+002000  2               PARAM3					= $09
+002000  2               
+002000  2               
+002000  2               
+002000  2               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+002000  2               ; WeeGUI entry point
+002000  2               ; Set up your call, then do a JSR to this address.
+002000  2               ;
+002000  2               WeeGUI					= $7b04		;  7c00
+002000  2               
+002000  2               
+002000  2               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+002000  2               ; API call names, to be passed to WeeGUI via X register
+002000  2               ; e.g.
+002000  2               ;     ldx #WGDesktop
+002000  2               ;     jsr WeeGUI
+002000  2               ;
+002000  2               WGClearScreen			= 0
+002000  2               WGDesktop				= 2
+002000  2               WGSetCursor				= 4
+002000  2               WGSetGlobalCursor		= 6
+002000  2               WGSyncGlobalCursor		= 8
+002000  2               WGPlot					= 10
+002000  2               WGPrint					= 12
+002000  2               WGFillRect				= 14
+002000  2               WGStrokeRect			= 16
+002000  2               WGFancyRect				= 18
+002000  2               WGPaintView				= 20
+002000  2               WGViewPaintAll			= 22
+002000  2               WGEraseViewContents		= 24
+002000  2               WGCreateView			= 26
+002000  2               WGCreateCheckbox		= 28
+002000  2               WGCreateButton			= 30
+002000  2               WGViewSetTitle			= 32
+002000  2               WGViewSetAction			= 34
+002000  2               WGSelectView			= 36
+002000  2               WGViewFromPoint			= 38
+002000  2               WGViewFocus				= 40
+002000  2               WGViewUnfocus			= 42
+002000  2               WGViewFocusNext			= 44
+002000  2               WGViewFocusPrev			= 46
+002000  2               WGViewFocusAction		= 48
+002000  2               WGPendingViewAction		= 50
+002000  2               WGPendingView			= 52
+002000  2               WGScrollX				= 54
+002000  2               WGScrollXBy				= 56
+002000  2               WGScrollY				= 58
+002000  2               WGScrollYBy				= 60
+002000  2               WGEnableMouse			= 62
+002000  2               WGDisableMouse			= 64
+002000  2               WGDeleteView			= 66
+002000  2               WGEraseView				= 68
+002000  2               WGExit					= 70
+002000  2               WGCreateProgress		= 72
+002000  2               WGSetState				= 74
+002000  2               
+002000  2               
+002000  2               
+002000  1               WGInit = $7b00
+002000  1               
+002000  1               PDMain:
+002000  1  A9 04 85 19    CallPDos PDOpenFile,WEEGUI_File
+002004  1  A9 23 85 1A  
+002008  1  20 5B 29     
+00200B  1  90 03          bcc @Opened
+00200D  1  4C A8 20       jmp @ExitPdos
+002010  1               
+002010  1               @Opened:
+002010  1  A9 04 85 19    CallPDos PDReadFile,WEEGUI_File
+002014  1  A9 23 85 1A  
+002018  1  20 51 2A     
+00201B  1  90 03          bcc @Read
+00201D  1  4C A8 20       jmp @ExitPdos
+002020  1               
+002020  1               @Read:
+002020  1  A9 04 85 19    CallPDos PDCloseFile,WEEGUI_File
+002024  1  A9 23 85 1A  
+002028  1  20 0D 2A     
+00202B  1  90 03          bcc @Closed
+00202D  1  4C A8 20       jmp @ExitPdos
+002030  1               
+002030  1               @Closed:
+002030  1  20 00 7B       jsr WGInit
+002033  1               
+002033  1  A2 02 20 04    CallWeegui WGDesktop
+002037  1  7B           
+002038  1  A9 2A 85 06    CallWeegui WGCreateButton,QuitButton
+00203C  1  A9 23 85 07  
+002040  1  A2 1E 20 04  
+002045  1  A9 32 85 06    CallWeegui WGCreateButton,CatButton
+002049  1  A9 23 85 07  
+00204D  1  A2 1E 20 04  
+002052  1  A9 22 85 06    CallWeegui WGCreateView,MainWindow
+002056  1  A9 23 85 07  
+00205A  1  A2 1A 20 04  
+00205F  1  A9 00          lda #0
+002061  1  A2 24 20 04    CallWeegui WGSelectView
+002065  1  7B           
+002066  1  A9 4C 85 06    CallWeegui WGViewSetTitle,MainWindowTitle
+00206A  1  A9 23 85 07  
+00206E  1  A2 20 20 04  
+002073  1  A2 16 20 04    CallWeegui WGViewPaintAll
+002077  1  7B           
+002078  1  A2 3E 20 04    CallWeegui WGEnableMouse
+00207C  1  7B           
+00207D  1               
+00207D  1               @Main:
+00207D  1  A2 32 20 04    CallWeegui WGPendingViewAction
+002081  1  7B           
+002082  1               
+002082  1  A9 00          lda #0
+002084  1  A2 24 20 04    CallWeegui WGSelectView
+002088  1  7B           
+002089  1               
+002089  1  20 A9 20       jsr GuiPrintDateTime
+00208C  1               
+00208C  1  AD 3B 23       lda GuiQuit
+00208F  1  C9 01          cmp #1
+002091  1  F0 02          beq @Exit
+002093  1               
+002093  1  80 E8          bra @Main
+002095  1               
+002095  1               @Exit:
+002095  1  A2 40 20 04    CallWeegui WGDisableMouse
+002099  1  7B           
+00209A  1  A2 46 20 04    CallWeegui WGExit
+00209E  1  7B           
+00209F  1               
+00209F  1  20 58 FC       jsr $fc58
+0020A2  1  20 2F FB       jsr $fb2f
+0020A5  1               
+0020A5  1  20 78 27       jsr PDPrintBitmap
+0020A8  1               
+0020A8  1               @ExitPdos:
+0020A8  1  60             rts
+0020A9  1               
+0020A9  1               GuiPrintDateTime:
+0020A9  1  20 C9 25       jsr PDStoreDateTime
+0020AC  1  A9 01          lda #1
+0020AE  1  85 06          sta PARAM0
+0020B0  1  A9 00          lda #0
+0020B2  1  85 07          sta PARAM1
+0020B4  1  A2 04 20 04    CallWeegui WGSetCursor
+0020B8  1  7B           
+0020B9  1  A9 B6 85 06    CallWeegui WGPrint,MLIDateString
+0020BD  1  A9 2F 85 07  
+0020C1  1  A2 0C 20 04  
+0020C6  1               
+0020C6  1  A9 0B          lda #11
+0020C8  1  85 06          sta PARAM0
+0020CA  1  A9 00          lda #0
+0020CC  1  85 07          sta PARAM1
+0020CE  1  A2 04 20 04    CallWeegui WGSetCursor
+0020D2  1  7B           
+0020D3  1  A9 C0 85 06    CallWeegui WGPrint,MLITimeString
+0020D7  1  A9 2F 85 07  
+0020DB  1  A2 0C 20 04  
+0020E0  1               
+0020E0  1  60             rts
+0020E1  1               
+0020E1  1               CatButtonCallback:
+0020E1  1  A9 06          lda #6
+0020E3  1  8D 3A 23       sta GuiCurrCol
+0020E6  1               
+0020E6  1  A9 00          lda #0
+0020E8  1  A2 24 20 04    CallWeegui WGSelectView
+0020EC  1  7B           
+0020ED  1  A2 18 20 04    CallWeegui WGEraseViewContents
+0020F1  1  7B           
+0020F2  1  A9 4C 85 06    CallWeegui WGViewSetTitle,MainWindowTitle
+0020F6  1  A9 23 85 07  
+0020FA  1  A2 20 20 04  
+0020FF  1  A2 14 20 04    CallWeegui WGPaintView
+002103  1  7B           
+002104  1               
+002104  1               ; Redraw Quit Button
+002104  1  A9 01          lda #1
+002106  1  A2 24 20 04    CallWeegui WGSelectView
+00210A  1  7B           
+00210B  1  A2 14 20 04    CallWeegui WGPaintView
+00210F  1  7B           
+002110  1               
+002110  1  A9 00          lda #0
+002112  1  A2 24 20 04    CallWeegui WGSelectView
+002116  1  7B           
+002117  1               
+002117  1  A9 01          lda #1
+002119  1  85 06          sta PARAM0
+00211B  1  A9 02          lda #2
+00211D  1  85 07          sta PARAM1
+00211F  1  A2 04 20 04    CallWeegui WGSetCursor
+002123  1  7B           
+002124  1  A9 F9 85 06    CallWeegui WGPrint,DirFileName
+002128  1  A9 22 85 07  
+00212C  1  A2 0C 20 04  
+002131  1               
+002131  1  A9 01          lda #1
+002133  1  85 06          sta PARAM0
+002135  1  A9 04          lda #4
+002137  1  85 07          sta PARAM1
+002139  1  A2 04 20 04    CallWeegui WGSetCursor
+00213D  1  7B           
+00213E  1  A9 63 85 06    CallWeegui WGPrint,GuiCat_Name
+002142  1  A9 23 85 07  
+002146  1  A2 0C 20 04  
+00214B  1               
+00214B  1  A9 10          lda #16
+00214D  1  85 06          sta PARAM0
+00214F  1  A9 04          lda #4
+002151  1  85 07          sta PARAM1
+002153  1  A2 04 20 04    CallWeegui WGSetCursor
+002157  1  7B           
+002158  1  A9 68 85 06    CallWeegui WGPrint,GuiCat_Type
+00215C  1  A9 23 85 07  
+002160  1  A2 0C 20 04  
+002165  1               
+002165  1  A9 15          lda #21
+002167  1  85 06          sta PARAM0
+002169  1  A9 04          lda #4
+00216B  1  85 07          sta PARAM1
+00216D  1  A2 04 20 04    CallWeegui WGSetCursor
+002171  1  7B           
+002172  1  A9 74 85 06    CallWeegui WGPrint,GuiCat_Modified
+002176  1  A9 23 85 07  
+00217A  1  A2 0C 20 04  
+00217F  1               
+00217F  1  A9 26          lda #38
+002181  1  85 06          sta PARAM0
+002183  1  A9 04          lda #4
+002185  1  85 07          sta PARAM1
+002187  1  A2 04 20 04    CallWeegui WGSetCursor
+00218B  1  7B           
+00218C  1  A9 7D 85 06    CallWeegui WGPrint,GuiCat_Created
+002190  1  A9 23 85 07  
+002194  1  A2 0C 20 04  
+002199  1               
+002199  1  A9 ED 85 19    CallPDos PDOpenFile,DirFile
+00219D  1  A9 22 85 1A  
+0021A1  1  20 5B 29     
+0021A4  1  B0 3E          bcs CatButtonCallback_Error
+0021A6  1               
+0021A6  1  A9 00          lda #0
+0021A8  1  A2 09          ldx #9
+0021AA  1  9D ED 22       sta DirFile,x
+0021AD  1  E8             inx
+0021AE  1  A9 60          lda #$60
+0021B0  1  9D ED 22       sta DirFile,x
+0021B3  1  A9 ED 85 19    CallPDos PDReadFile,DirFile
+0021B7  1  A9 22 85 1A  
+0021BB  1  20 51 2A     
+0021BE  1  B0 24          bcs CatButtonCallback_Error
+0021C0  1               
+0021C0  1  A9 21          lda #>GuiDirCallback
+0021C2  1  85 1C          sta PDPARAM3
+0021C4  1  A9 F3          lda #<GuiDirCallback
+0021C6  1  85 1B          sta PDPARAM2
+0021C8  1  A9 ED 85 19    CallPDos PDReadDirectory,DirFile
+0021CC  1  A9 22 85 1A  
+0021D0  1  20 E3 2B     
+0021D3  1  B0 0F          bcs CatButtonCallback_Error
+0021D5  1               
+0021D5  1  A9 ED 85 19    CallPDos PDCloseFile,DirFile
+0021D9  1  A9 22 85 1A  
+0021DD  1  20 0D 2A     
+0021E0  1  B0 02          bcs CatButtonCallback_Error
+0021E2  1  80 0E          bra CatButtonCallback_Return
+0021E4  1               
+0021E4  1               CatButtonCallback_Error:
+0021E4  1  B8             clv
+0021E5  1  A9 93 85 06    CallWeegui WGPrint,MLIErrorString
+0021E9  1  A9 2F 85 07  
+0021ED  1  A2 0C 20 04  
+0021F2  1               
+0021F2  1               CatButtonCallback_Return:
+0021F2  1  60             rts
+0021F3  1               
+0021F3  1               GuiDirCallback:
+0021F3  1  A2 00          ldx #0
+0021F5  1  A0 00          ldy #0
+0021F7  1               GuiDirCallback_PrintName:
+0021F7  1  EC D8 2F       cpx PDDirEntry_NameLength
+0021FA  1  F0 0A          beq GuiDirCallback_Done
+0021FC  1               
+0021FC  1  B9 D9 2F       lda PDDirEntry_FileName,y
+0021FF  1  9D 3C 23       sta ReadDirFileNameBuffer,x
+002202  1               
+002202  1  C8             iny
+002203  1  E8             inx
+002204  1  80 F1          bra GuiDirCallback_PrintName
+002206  1               
+002206  1               GuiDirCallback_Done:
+002206  1  A9 00          lda #0
+002208  1  9D 3C 23       sta ReadDirFileNameBuffer,x
+00220B  1               
+00220B  1               ; Print File Name
+00220B  1  A9 01          lda #1
+00220D  1  85 06          sta PARAM0
+00220F  1  AD 3A 23       lda GuiCurrCol
+002212  1  85 07          sta PARAM1
+002214  1  A2 04 20 04    CallWeegui WGSetCursor
+002218  1  7B           
+002219  1  A9 3C 85 06    CallWeegui WGPrint,ReadDirFileNameBuffer
+00221D  1  A9 23 85 07  
+002221  1  A2 0C 20 04  
+002226  1               
+002226  1               ; Print Type
+002226  1  A9 11          lda #17
+002228  1  85 06          sta PARAM0
+00222A  1  AD 3A 23       lda GuiCurrCol
+00222D  1  85 07          sta PARAM1
+00222F  1  A2 04 20 04    CallWeegui WGSetCursor
+002233  1  7B           
+002234  1  A9 FF 85 06    CallWeegui WGPrint,PDDirEntry_FileTypeStr
+002238  1  A9 2F 85 07  
+00223C  1  A2 0C 20 04  
+002241  1               
+002241  1               ; Update Mod Date/Time
+002241  1  AD F9 2F       lda PDDirEntry_ModificationDate
+002244  1  8D 90 BF       sta MLIDate
+002247  1  AD FA 2F       lda PDDirEntry_ModificationDate+1
+00224A  1  8D 91 BF       sta MLIDate+1
+00224D  1  AD FB 2F       lda PDDirEntry_ModificationTime
+002250  1  8D 92 BF       sta MLITime
+002253  1  AD FC 2F       lda PDDirEntry_ModificationTime+1
+002256  1  8D 93 BF       sta MLITime+1
+002259  1  20 D6 25       jsr PDRenderDateTime
+00225C  1               
+00225C  1               ; Print Mod Date
+00225C  1  A9 15          lda #21
+00225E  1  85 06          sta PARAM0
+002260  1  AD 3A 23       lda GuiCurrCol
+002263  1  85 07          sta PARAM1
+002265  1  A2 04 20 04    CallWeegui WGSetCursor
+002269  1  7B           
+00226A  1  A9 B6 85 06    CallWeegui WGPrint,MLIDateString
+00226E  1  A9 2F 85 07  
+002272  1  A2 0C 20 04  
+002277  1               
+002277  1               ; Print Mod Time
+002277  1  A9 1F          lda #31
+002279  1  85 06          sta PARAM0
+00227B  1  AD 3A 23       lda GuiCurrCol
+00227E  1  85 07          sta PARAM1
+002280  1  A2 04 20 04    CallWeegui WGSetCursor
+002284  1  7B           
+002285  1  A9 C0 85 06    CallWeegui WGPrint,MLITimeString
+002289  1  A9 2F 85 07  
+00228D  1  A2 0C 20 04  
+002292  1               
+002292  1               ; Update Create Date/Time
+002292  1  AD F0 2F       lda PDDirEntry_CreationDate
+002295  1  8D 90 BF       sta MLIDate
+002298  1  AD F1 2F       lda PDDirEntry_CreationDate+1
+00229B  1  8D 91 BF       sta MLIDate+1
+00229E  1  AD F2 2F       lda PDDirEntry_CreationTime
+0022A1  1  8D 92 BF       sta MLITime
+0022A4  1  AD F3 2F       lda PDDirEntry_CreationTime+1
+0022A7  1  8D 93 BF       sta MLITime+1
+0022AA  1  20 D6 25       jsr PDRenderDateTime
+0022AD  1               
+0022AD  1               ; Print Create Date
+0022AD  1  A9 26          lda #38
+0022AF  1  85 06          sta PARAM0
+0022B1  1  AD 3A 23       lda GuiCurrCol
+0022B4  1  85 07          sta PARAM1
+0022B6  1  A2 04 20 04    CallWeegui WGSetCursor
+0022BA  1  7B           
+0022BB  1  A9 B6 85 06    CallWeegui WGPrint,MLIDateString
+0022BF  1  A9 2F 85 07  
+0022C3  1  A2 0C 20 04  
+0022C8  1               
+0022C8  1               ; Print Create Time
+0022C8  1  A9 30          lda #48
+0022CA  1  85 06          sta PARAM0
+0022CC  1  AD 3A 23       lda GuiCurrCol
+0022CF  1  85 07          sta PARAM1
+0022D1  1  A2 04 20 04    CallWeegui WGSetCursor
+0022D5  1  7B           
+0022D6  1  A9 C0 85 06    CallWeegui WGPrint,MLITimeString
+0022DA  1  A9 2F 85 07  
+0022DE  1  A2 0C 20 04  
+0022E3  1               
+0022E3  1  EE 3A 23       inc GuiCurrCol
+0022E6  1  60             rts
+0022E7  1               
+0022E7  1               QuitButtonCallback:
+0022E7  1  A9 01          lda #1
+0022E9  1  8D 3B 23       sta GuiQuit
+0022EC  1  60             rts
+0022ED  1               
+0022ED  1               DirFile:
+0022ED  1  00             .byte 0                       ; Reference Number
+0022EE  1  00 00 00       .byte 0,0,0                   ; File Length
+0022F1  1  00 00 00       .byte 0,0,0                   ; File Mark
+0022F4  1  00 02          .word 512                     ; I/O Byte Count
+0022F6  1  00 60          .addr $6000                   ; Data Location
+0022F8  1  00             .byte 0                       ; String Length
+0022F9  1               DirFileName:
+0022F9  1  2F 50 52 4F    .asciiz "/PRODOS402"          ; Null Terminated String
+0022FD  1  44 4F 53 34  
+002301  1  30 32 00     
+002304  1               
+002304  1               WEEGUI_File:
+002304  1  00             .byte 0                       ; Reference Number
+002305  1  00 00 00       .byte 0,0,0                   ; File Length
+002308  1  00 00 00       .byte 0,0,0                   ; File Mark
+00230B  1  00 00          .word 0                       ; I/O Byte Count
+00230D  1  00 00          .addr 0                       ; Data Location
+00230F  1  00             .byte 0                       ; String Length
+002310  1  2F 50 52 4F    .asciiz "/PRODOS402/WEEGUI"   ; Null Terminated String
+002314  1  44 4F 53 34  
+002318  1  30 32 2F 57  
+002322  1               
+002322  1               MainWindow:
+002322  1  00             .byte 0                       ; ID
+002323  1  02             .byte 2                       ; Style
+002324  1  02 01          .byte 2, 1                    ; Left, Top
+002326  1  4C 15          .byte 76, 21                  ; Width, Height
+002328  1  4C 28          .byte 76, 40                  ; Content Width, Content Height
+00232A  1               
+00232A  1               QuitButton:
+00232A  1  01             .byte 1
+00232B  1  43 01          .byte 67,1
+00232D  1  0A             .byte 10
+00232E  1  E7 22          .addr QuitButtonCallback
+002330  1  56 23          .addr QuitButtonStr
+002332  1               
+002332  1               CatButton:
+002332  1  02             .byte 2
+002333  1  14 01          .byte 20,1
+002335  1  0D             .byte 13
+002336  1  E1 20          .addr CatButtonCallback
+002338  1  5B 23          .addr CatButtonStr
+00233A  1               
+00233A  1               GuiCurrCol:
+00233A  1  01             .byte 1
+00233B  1               
+00233B  1               GuiQuit:
+00233B  1  00             .byte 0
+00233C  1               
+00233C  1               ReadDirFileNameBuffer:
+00233C  1  xx xx xx xx    .res 16
+002340  1  xx xx xx xx  
+002344  1  xx xx xx xx  
+00234C  1               
+00234C  1               MainWindowTitle:
+00234C  1  50 44 6F 73    .asciiz "PDos Demo"
+002350  1  20 44 65 6D  
+002354  1  6F 00        
+002356  1               QuitButtonStr:
+002356  1  51 75 69 74    .asciiz "Quit"
+00235A  1  00           
+00235B  1               CatButtonStr:
+00235B  1  43 61 74 61    .asciiz "Catalog"
+00235F  1  6C 6F 67 00  
+002363  1               GuiCat_Name:
+002363  1  4E 41 4D 45    .asciiz "NAME"
+002367  1  00           
+002368  1               GuiCat_Type:
+002368  1  54 59 50 45    .asciiz "TYPE"
+00236C  1  00           
+00236D  1               GuiCat_Blocks:
+00236D  1  42 4C 4F 43    .asciiz "BLOCKS"
+002371  1  4B 53 00     
+002374  1               GuiCat_Modified:
+002374  1  4D 4F 44 49    .asciiz "MODIFIED"
+002378  1  46 49 45 44  
+00237C  1  00           
+00237D  1               GuiCat_Created:
+00237D  1  43 52 45 41    .asciiz "CREATED"
+002381  1  54 45 44 00  
+002385  1               GuiCat_EndFile:
+002385  1  45 4E 44 46    .asciiz "ENDFILE"
+002389  1  49 4C 45 00  
+00238D  1               GuiCat_SubType:
+00238D  1  53 55 42 54    .asciiz "SUBTYPE"
+002391  1  59 50 45 00  
+002395  1               
+002395  1               ; BRUN'ing Pdos hits here.
+002395  1               main:
+002395  1  20 D8 23       jsr PDInit
+002398  1  60             rts
+002399  1               
+002399  1               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+002399  1               ; PDOSDispatch
+002399  1               ; The dispatcher for calling the assembly-language API from assembly programs
+002399  1               ; X: API call number
+002399  1               ; PDPARAM0-3,Y: Parameters to call, as needed
+002399  1               PDOSDispatch:
+002399  1  7C 9C 23       jmp (PDEntryPointTable,x)
+00239C  1               
+00239C  1               ; Entry point jump table
+00239C  1               PDEntryPointTable:
+00239C  1               ; PDos API Calls
+00239C  1  5B 29        .addr PDOpenFile
+00239E  1  51 2A        .addr PDReadFile
+0023A0  1  0D 2A        .addr PDCloseFile
+0023A2  1  68 2B        .addr PDGetInfo
+0023A4  1  B7 2B        .addr PDSetEOF
+0023A6  1               
+0023A6  1               ; Memory
+0023A6  1  DA 23        .addr PDReservePage
+0023A8  1  0D 24        .addr PDReleasePage
+0023AA  1  42 24        .addr PDFindHighestFreePage
+0023AC  1  67 24        .addr PDReserveRange
+0023AE  1  B0 24        .addr PDReleaseRange
+0023B0  1  E7 24        .addr PDCheckPageFree
+0023B2  1  0C 25        .addr PDFindBuffer
+0023B4  1  61 25        .addr PDReserveBuffer
+0023B6  1  95 25        .addr PDReleaseBuffer
+0023B8  1               
+0023B8  1               ; Utilities
+0023B8  1  C9 25        .addr PDStoreDateTime
+0023BA  1  D5 26        .addr PDErrorFromCode
+0023BC  1  78 27        .addr PDPrintBitmap
+0023BE  1  AF 27        .addr PDPrintCurrentError
+0023C0  1  B5 27        .addr PDPrintErrorString
+0023C2  1               
+0023C2  1               ; Lower-level Prodos MLI Wrappers
+0023C2  1  F3 27        .addr PDSysOpen
+0023C4  1  63 28        .addr PDSysRead
+0023C6  1  69 28        .addr PDSysWrite
+0023C8  1  2C 28        .addr PDSysClose
+0023CA  1  32 28        .addr PDSysFlush
+0023CC  1  AA 28        .addr PDSysGetTime
+0023CE  1  B9 28        .addr PDSysGetFileInfo
+0023D0  1  FC 28        .addr PDSysGetEOF
+0023D2  1  F6 28        .addr PDSysSetEOF
+0023D4  1  EA 28        .addr PDSysGetMark
+0023D6  1  F0 28        .addr PDSysSetMark
+0023D8  1               
+0023D8  1               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+0023D8  1               ; PDInit
+0023D8  1               ; Sets PDos up.  Reserves PDos in memory map.
+0023D8  1               PDInit:
+0023D8  1  60             rts
+0023D9  1               
+0023D9  1               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+0023D9  1               ; PDExit
+0023D9  1               ; Cleans up PDos.  Call when done.
+0023D9  1               PDExit:
+0023D9  1  60             rts
+0023DA  1               
+0023DA  1               ; Core modules
+0023DA  1               .include "memory.s"
+0023DA  2               ;
+0023DA  2               ;  memory.s
+0023DA  2               ;  Routines to reserve, release, and otherwise manage the prodos
+0023DA  2               ;  bitmap.
+0023DA  2               ;
+0023DA  2               
+0023DA  2               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+0023DA  2               ; Memory Page Routines
+0023DA  2               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+0023DA  2               
+0023DA  2               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+0023DA  2               ; PDReservePage
+0023DA  2               ; Params: A - High byte of page address
+0023DA  2               ; Reserves page in A in the Prodos bitmap
+0023DA  2               ; Checks if page is already reserved
+0023DA  2               ; Set Carry signals error
+0023DA  2               PDReservePage:
+0023DA  2  48 DA 5A       SAVE_AXY
+0023DD  2               
+0023DD  2  8D 5D 2F       sta MLICurrPage
+0023E0  2  20 E7 24       jsr PDCheckPageFree
+0023E3  2  B0 23          bcs PDReservePage_PageInUse
+0023E5  2               
+0023E5  2               ; Get bitmap byte for page
+0023E5  2  AD 5D 2F       lda MLICurrPage
+0023E8  2  29 F8          and #$F8
+0023EA  2  4A             lsr
+0023EB  2  4A             lsr
+0023EC  2  4A             lsr
+0023ED  2  AA             tax
+0023EE  2               
+0023EE  2               ; Get page bit position in bitmap byte
+0023EE  2  AD 5D 2F       lda MLICurrPage
+0023F1  2  29 07          and #$07
+0023F3  2               ; 3-bit complement
+0023F3  2  49 07          eor #$07
+0023F5  2  A8             tay
+0023F6  2               
+0023F6  2               ; Set the page bit.
+0023F6  2  BD 58 BF       lda MLIBitmap,X
+0023F9  2  8D 5E 2F       sta MLICurrByte
+0023FC  2               
+0023FC  2  B9 7F 2F       lda MLIPositionTable,Y
+0023FF  2  0D 5E 2F       ora MLICurrByte
+002402  2  9D 58 BF       sta MLIBitmap,X
+002405  2               
+002405  2               ; Success
+002405  2  18             clc
+002406  2  80 01          bra PDReservePage_Return
+002408  2               
+002408  2               PDReservePage_PageInUse:
+002408  2               ; Failure
+002408  2  38             sec
+002409  2               PDReservePage_Return:
+002409  2  7A FA 68       RESTORE_AXY
+00240C  2  60             rts
+00240D  2               
+00240D  2               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+00240D  2               ; PDReleasePage
+00240D  2               ; Params: A - high byte of page address
+00240D  2               ; Releases page passed in A from prodos bitmap.
+00240D  2               ; Checks if page is already free.
+00240D  2               ; Set Carry signals error
+00240D  2               PDReleasePage:
+00240D  2  48 DA 5A       SAVE_AXY
+002410  2               
+002410  2  8D 5D 2F       sta MLICurrPage
+002413  2  20 E7 24       jsr PDCheckPageFree
+002416  2  90 25          bcc PDReleasePage_PageNotFree
+002418  2               
+002418  2               ; Get bitmap byte for page
+002418  2  AD 5D 2F       lda MLICurrPage
+00241B  2  29 F8          and #$F8
+00241D  2  4A             lsr
+00241E  2  4A             lsr
+00241F  2  4A             lsr
+002420  2  AA             tax
+002421  2               
+002421  2               ; Get bit position in bitmap byte
+002421  2  AD 5D 2F       lda MLICurrPage
+002424  2  29 07          and #$07
+002426  2  49 07          eor #$07
+002428  2  A8             tay
+002429  2               
+002429  2  BD 58 BF       lda MLIBitmap,X
+00242C  2  8D 5E 2F       sta MLICurrByte
+00242F  2               
+00242F  2  B9 7F 2F       lda MLIPositionTable,Y
+002432  2               ; Get complement
+002432  2  49 FF          eor #$FF
+002434  2               ; Clear bit
+002434  2  2D 5E 2F       and MLICurrByte
+002437  2               ; Save it
+002437  2  9D 58 BF       sta MLIBitmap,X
+00243A  2               
+00243A  2               ; Success
+00243A  2  18             clc
+00243B  2  80 01          bra PDReleasePage_Return
+00243D  2               
+00243D  2               PDReleasePage_PageNotFree:
+00243D  2  38             sec
+00243E  2               
+00243E  2               PDReleasePage_Return:
+00243E  2  7A FA 68       RESTORE_AXY
+002441  2  60             rts
+002442  2               
+002442  2               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+002442  2               ; PDFindHighestFreePage
+002442  2               ; Params: A - High byte of start page address.
+002442  2               ; Returns highest free page in prodos bitmap starting from the
+002442  2               ; page passed in A
+002442  2               ; Set carry signals no free pages found.
+002442  2               PDFindHighestFreePage:
+002442  2  48 DA 5A       SAVE_AXY
+002445  2               
+002445  2  8D 5D 2F       sta MLICurrPage
+002448  2               
+002448  2               PDFindHighestFreePage_CheckCurrentPage:
+002448  2  AD 5D 2F       lda MLICurrPage
+00244B  2  20 E7 24       jsr PDCheckPageFree
+00244E  2  90 0C          bcc PDFindHighestFreePage_FoundFreePage
+002450  2               
+002450  2  CE 5D 2F       dec MLICurrPage
+002453  2  AD 5D 2F       lda MLICurrPage
+002456  2  C9 01          cmp #1
+002458  2  F0 08          beq PDFindHighestFreePage_FreePageNotFound
+00245A  2  80 EC          bra PDFindHighestFreePage_CheckCurrentPage
+00245C  2               
+00245C  2               PDFindHighestFreePage_FoundFreePage:
+00245C  2               ; Success
+00245C  2  AD 5D 2F       lda MLICurrPage
+00245F  2  18             clc
+002460  2  80 01          bra PDFindHighestFreePage_Return
+002462  2               
+002462  2               PDFindHighestFreePage_FreePageNotFound:
+002462  2               ; Failure
+002462  2  38             sec
+002463  2               
+002463  2               PDFindHighestFreePage_Return:
+002463  2  7A FA 68       RESTORE_AXY
+002466  2  60             rts
+002467  2               
+002467  2               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+002467  2               ; PDReserveRange
+002467  2               ; Params: A - First Page, Y - Last Page
+002467  2               ; Checks if all pages in range are free and reserves
+002467  2               ; the inclusive range if so.
+002467  2               PDReserveRange:
+002467  2  48 DA 5A       SAVE_AXY
+00246A  2               
+00246A  2  8D 5F 2F     	sta MLIPageStart
+00246D  2  8D 5D 2F     	sta MLICurrPage
+002470  2  8C 60 2F     	sty MLIPageEnd
+002473  2               
+002473  2               ; Check that MLIPageStart <= MLIPageEnd
+002473  2  AD 60 2F     	lda MLIPageEnd
+002476  2  CD 5F 2F     	cmp MLIPageStart
+002479  2  90 30        	bcc PDReserveRange_Failed
+00247B  2               
+00247B  2  EE 60 2F     	inc MLIPageEnd
+00247E  2               
+00247E  2               ; Loop through the range and make sure pages are free.
+00247E  2               PDReserveRange_CheckForFreePages:
+00247E  2  AD 5D 2F       lda MLICurrPage
+002481  2  CD 60 2F     	cmp MLIPageEnd
+002484  2  F0 0A        	beq PDReserveRange_ReservePages
+002486  2               
+002486  2  20 E7 24     	jsr PDCheckPageFree
+002489  2  B0 20        	bcs PDReserveRange_Failed
+00248B  2  EE 5D 2F     	inc MLICurrPage
+00248E  2  80 EE        	bra PDReserveRange_CheckForFreePages
+002490  2               
+002490  2               PDReserveRange_ReservePages:
+002490  2  AD 5F 2F       lda MLIPageStart
+002493  2  8D 5D 2F     	sta MLICurrPage
+002496  2               
+002496  2               PDReserveRange_ReservePage:
+002496  2  AD 5D 2F       lda MLICurrPage
+002499  2  CD 60 2F     	cmp MLIPageEnd
+00249C  2  F0 0A        	beq PDReserveRange_Success
+00249E  2               
+00249E  2  20 DA 23     	jsr PDReservePage
+0024A1  2  B0 08        	bcs PDReserveRange_Failed
+0024A3  2               
+0024A3  2  EE 5D 2F     	inc MLICurrPage
+0024A6  2  80 EE        	bra PDReserveRange_ReservePage
+0024A8  2               
+0024A8  2               PDReserveRange_Success:
+0024A8  2               ; Success
+0024A8  2  18             clc
+0024A9  2  80 01        	bra PDReserveRange_Return
+0024AB  2               
+0024AB  2               PDReserveRange_Failed:
+0024AB  2               ; Failure
+0024AB  2  38             sec
+0024AC  2               
+0024AC  2               PDReserveRange_Return:
+0024AC  2  7A FA 68       RESTORE_AXY
+0024AF  2  60           	rts
+0024B0  2               
+0024B0  2               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+0024B0  2               ; PDReleaseRange
+0024B0  2               ; Params: A - First Page, Y - Last Page
+0024B0  2               ; Releases all page in inclusive range
+0024B0  2               PDReleaseRange:
+0024B0  2  48 DA 5A       SAVE_AXY
+0024B3  2               
+0024B3  2  8D 5F 2F       sta MLIPageStart
+0024B6  2  8D 5D 2F       sta MLICurrPage
+0024B9  2  8C 60 2F       sty MLIPageEnd
+0024BC  2               
+0024BC  2               ; Check that MLIPageStart <= MLIPageEnd
+0024BC  2  AD 60 2F       lda MLIPageEnd
+0024BF  2  CD 5F 2F       cmp MLIPageStart
+0024C2  2  90 1E          bcc PDReleaseRange_Failed
+0024C4  2               
+0024C4  2  EE 60 2F       inc MLIPageEnd
+0024C7  2               
+0024C7  2               PDReleaseRange_ReleasePages:
+0024C7  2  AD 5F 2F       lda MLIPageStart
+0024CA  2  8D 5D 2F       sta MLICurrPage
+0024CD  2               
+0024CD  2               PDReleaseRange_ReleasePage:
+0024CD  2  AD 5D 2F       lda MLICurrPage
+0024D0  2  CD 60 2F       cmp MLIPageEnd
+0024D3  2  F0 0A          beq PDReleaseRange_Success
+0024D5  2               
+0024D5  2  20 0D 24       jsr PDReleasePage
+0024D8  2  B0 08          bcs PDReleaseRange_Failed
+0024DA  2               
+0024DA  2  EE 5D 2F       inc MLICurrPage
+0024DD  2  80 EE          bra PDReleaseRange_ReleasePage
+0024DF  2               
+0024DF  2               PDReleaseRange_Success:
+0024DF  2               ; Success
+0024DF  2  18             clc
+0024E0  2  80 01          bra PDReleaseRange_Return
+0024E2  2               
+0024E2  2               PDReleaseRange_Failed:
+0024E2  2               ; Failure
+0024E2  2  38             sec
+0024E3  2               
+0024E3  2               PDReleaseRange_Return:
+0024E3  2  7A FA 68       RESTORE_AXY
+0024E6  2  60             rts
+0024E7  2               
+0024E7  2               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+0024E7  2               ; PDCheckPageFree
+0024E7  2               ; Params: A - High byte of page address
+0024E7  2               ; Checks if Page A is free in the prodos bitmap
+0024E7  2               ; Set carry: Page in use, Clear Carry: Page free
+0024E7  2               ; Routine from Prodos 8 Tech Manual
+0024E7  2               PDCheckPageFree:
+0024E7  2  48 DA 5A       SAVE_AXY
+0024EA  2               
+0024EA  2  C9 C0          cmp #$C0
+0024EC  2  B0 19          bcs PDCheckPageFree_PageNotFree
+0024EE  2               
+0024EE  2  AA             tax
+0024EF  2  4A             lsr
+0024F0  2  4A             lsr
+0024F1  2  4A             lsr
+0024F2  2  A8             tay
+0024F3  2  8A             txa
+0024F4  2  29 07          and #$7
+0024F6  2  AA             tax
+0024F7  2  A9 80          lda #$80
+0024F9  2               
+0024F9  2               PDCheckPageFree_NextBit:
+0024F9  2  CA             dex
+0024FA  2  30 03          bmi PDCheckPageFree_CheckBit
+0024FC  2  4A             lsr
+0024FD  2  80 FA          bra PDCheckPageFree_NextBit
+0024FF  2               
+0024FF  2               PDCheckPageFree_CheckBit:
+0024FF  2  39 58 BF       and MLIBitmap,y
+002502  2  D0 03          bne PDCheckPageFree_PageNotFree
+002504  2               
+002504  2               ; Page Free
+002504  2  18             clc
+002505  2  80 01          bra PDCheckPageFree_Return
+002507  2               
+002507  2               PDCheckPageFree_PageNotFree:
+002507  2  38             sec
+002508  2               
+002508  2               PDCheckPageFree_Return:
+002508  2  7A FA 68       RESTORE_AXY
+00250B  2  60             rts
+00250C  2               
+00250C  2               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+00250C  2               ; Prodos 1024-byte Buffer Routines
+00250C  2               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+00250C  2               
+00250C  2               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+00250C  2               ; PDFindBuffer
+00250C  2               ; Attempts to find a 1024-byte buffer in memory.
+00250C  2               ; Returns high byte of buffer address in A
+00250C  2               ; Set carry signals no buffer found.
+00250C  2               PDFindBuffer:
+00250C  2  48 DA 5A       SAVE_AXY
+00250F  2               
+00250F  2               ; Start at highest valid page
+00250F  2  A9 BF        	lda #$BF
+002511  2  20 42 24     	jsr PDFindHighestFreePage
+002514  2  B0 46        	bcs PDFindBuffer_Failure
+002516  2               
+002516  2  8D 5D 2F     	sta MLICurrPage
+002519  2  8D 5F 2F     	sta MLIPageStart
+00251C  2               
+00251C  2               PDFindBuffer_CheckWindow:
+00251C  2  AD 5D 2F       lda MLICurrPage
+00251F  2  20 E7 24     	jsr PDCheckPageFree
+002522  2  B0 29        	bcs PDFindBuffer_NextWindow
+002524  2               
+002524  2  CE 5D 2F     	dec MLICurrPage
+002527  2  AD 5D 2F     	lda MLICurrPage
+00252A  2  20 E7 24     	jsr PDCheckPageFree
+00252D  2  B0 1E        	bcs PDFindBuffer_NextWindow
+00252F  2               
+00252F  2  CE 5D 2F     	dec MLICurrPage
+002532  2  AD 5D 2F     	lda MLICurrPage
+002535  2  20 E7 24     	jsr PDCheckPageFree
+002538  2  B0 13        	bcs PDFindBuffer_NextWindow
+00253A  2               
+00253A  2  CE 5D 2F     	dec MLICurrPage
+00253D  2  AD 5D 2F     	lda MLICurrPage
+002540  2  20 E7 24     	jsr PDCheckPageFree
+002543  2  B0 08        	bcs PDFindBuffer_NextWindow
+002545  2               
+002545  2               ; Success, found a 4 page window
+002545  2  AD 5D 2F     	lda MLICurrPage
+002548  2  18           	clc
+002549  2  7A FA 68       RESTORE_AXY
+00254C  2  60           	rts
+00254D  2               
+00254D  2               PDFindBuffer_NextWindow:
+00254D  2  CE 5F 2F       dec MLIPageStart
+002550  2  AD 5F 2F     	lda MLIPageStart
+002553  2  8D 5D 2F     	sta MLICurrPage
+002556  2               
+002556  2               ; Don't search below text page 2
+002556  2  C9 07        	cmp #7
+002558  2  F0 02        	beq PDFindBuffer_Failure
+00255A  2  80 C0        	bra PDFindBuffer_CheckWindow
+00255C  2               
+00255C  2               PDFindBuffer_Failure:
+00255C  2  38             sec
+00255D  2  7A FA 68       RESTORE_AXY
+002560  2  60           	rts
+002561  2               
+002561  2               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+002561  2               ; PDReserveBuffer
+002561  2               ; Params: A - High byte of buffer start page.
+002561  2               ; Allocates a 1024 byte buffer in the prodos memory map.
+002561  2               ; Set carry signals error
+002561  2               PDReserveBuffer:
+002561  2  48 DA 5A       SAVE_AXY
+002564  2               
+002564  2  8D 5D 2F     	sta MLICurrPage
+002567  2               
+002567  2  20 DA 23     	jsr PDReservePage
+00256A  2  B0 24        	bcs PDReserveBuffer_Failure
+00256C  2  EE 5D 2F     	inc MLICurrPage
+00256F  2               
+00256F  2  AD 5D 2F     	lda MLICurrPage
+002572  2  20 DA 23     	jsr PDReservePage
+002575  2  B0 19        	bcs PDReserveBuffer_Failure
+002577  2  EE 5D 2F     	inc MLICurrPage
+00257A  2               
+00257A  2  AD 5D 2F     	lda MLICurrPage
+00257D  2  20 DA 23     	jsr PDReservePage
+002580  2  B0 0E        	bcs PDReserveBuffer_Failure
+002582  2  EE 5D 2F     	inc MLICurrPage
+002585  2               
+002585  2  AD 5D 2F     	lda MLICurrPage
+002588  2  20 DA 23     	jsr PDReservePage
+00258B  2  B0 03        	bcs PDReserveBuffer_Failure
+00258D  2               
+00258D  2               ; Success
+00258D  2  18           	clc
+00258E  2  80 01        	bra PDReserveBuffer_Return
+002590  2               
+002590  2               PDReserveBuffer_Failure:
+002590  2  38             sec
+002591  2               
+002591  2               PDReserveBuffer_Return:
+002591  2  7A FA 68       RESTORE_AXY
+002594  2  60           	rts
+002595  2               
+002595  2               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+002595  2               ; PDReleaseBuffer
+002595  2               ; Params: A - High byte of buffer start page.
+002595  2               ; Releases a 1024 byte buffer in the prodos memory map.
+002595  2               ; Set carry signals error
+002595  2               PDReleaseBuffer:
+002595  2  48 DA 5A       SAVE_AXY
+002598  2               
+002598  2  8D 5D 2F     	sta MLICurrPage
+00259B  2               
+00259B  2  20 0D 24     	jsr PDReleasePage
+00259E  2  B0 24        	bcs PDReleaseBuffer_Failure
+0025A0  2  EE 5D 2F     	inc MLICurrPage
+0025A3  2               
+0025A3  2  AD 5D 2F     	lda MLICurrPage
+0025A6  2  20 0D 24     	jsr PDReleasePage
+0025A9  2  B0 19        	bcs PDReleaseBuffer_Failure
+0025AB  2  EE 5D 2F     	inc MLICurrPage
+0025AE  2               
+0025AE  2  AD 5D 2F     	lda MLICurrPage
+0025B1  2  20 0D 24     	jsr PDReleasePage
+0025B4  2  B0 0E        	bcs PDReleaseBuffer_Failure
+0025B6  2  EE 5D 2F     	inc MLICurrPage
+0025B9  2               
+0025B9  2  AD 5D 2F     	lda MLICurrPage
+0025BC  2  20 0D 24     	jsr PDReleasePage
+0025BF  2  B0 03        	bcs PDReleaseBuffer_Failure
+0025C1  2               
+0025C1  2               ; Success
+0025C1  2  18           	clc
+0025C2  2  80 01        	bra PDReleaseBuffer_Return
+0025C4  2               
+0025C4  2               PDReleaseBuffer_Failure:
+0025C4  2  38             sec
+0025C5  2               
+0025C5  2               PDReleaseBuffer_Return:
+0025C5  2  7A FA 68       RESTORE_AXY
+0025C8  2  60           	rts
+0025C9  2               
+0025C9  1               .include "utils.s"
+0025C9  2               ;
+0025C9  2               ;  utils.s
+0025C9  2               ;  General Utilities
+0025C9  2               ;
+0025C9  2               
+0025C9  2               
+0025C9  2               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+0025C9  2               ; PDStoreDateTime
+0025C9  2               ; Get Current System Datetime and render it into MLIDateString
+0025C9  2               ; and MLITimeString
+0025C9  2               PDStoreDateTime:
+0025C9  2  48 DA 5A     	SAVE_AXY
+0025CC  2  20 AA 28     	jsr PDSysGetTime
+0025CF  2  20 D6 25     	jsr PDRenderDateTime
+0025D2  2  7A FA 68     	RESTORE_AXY
+0025D5  2  60           	rts
+0025D6  2               
+0025D6  2               ; Renders the date in MLIDate and MLITime into MLIDateString
+0025D6  2               ; and MLITimeString
+0025D6  2               PDRenderDateTime:
+0025D6  2  48 DA 5A     	SAVE_AXY
+0025D9  2               
+0025D9  2               	; Get the day
+0025D9  2  AD 90 BF     	lda MLIDate
+0025DC  2  C9 00        	cmp #0
+0025DE  2  D0 03        	bne PDRenderDateTime_ValidDate
+0025E0  2  4C B1 26     	jmp PDRenderDateTime_NoDate
+0025E3  2               
+0025E3  2               PDRenderDateTime_ValidDate:
+0025E3  2  29 1F        	and #$1F
+0025E5  2               
+0025E5  2  20 21 27     	jsr PDByteToDecimalString
+0025E8  2               
+0025E8  2  A9 59        	lda #<MLIConvStr
+0025EA  2  85 1D        	sta POINTER
+0025EC  2  A9 2F        	lda #>MLIConvStr
+0025EE  2  85 1E        	sta POINTER+1
+0025F0  2  A0 00        	ldy #0
+0025F2  2  A2 00        	ldx #0
+0025F4  2               
+0025F4  2               PDRenderDateTime_RenderDay:
+0025F4  2  B1 1D        	lda (POINTER),y
+0025F6  2  C9 00        	cmp #0
+0025F8  2  F0 07        	beq PDRenderDateTime_RenderSep1
+0025FA  2               
+0025FA  2  9D B6 2F     	sta MLIDateString,x
+0025FD  2  E8           	inx
+0025FE  2  C8           	iny
+0025FF  2  80 F3        	bra PDRenderDateTime_RenderDay
+002601  2               
+002601  2               PDRenderDateTime_RenderSep1:
+002601  2  A9 AD        	lda #$AD                      ; -
+002603  2  9D B6 2F     	sta MLIDateString,x
+002606  2  E8           	inx
+002607  2               
+002607  2               	; Get the month
+002607  2               	; The month is 4 bits spread over 2 bytes.
+002607  2               	; These shifts and add move it to a single byte.
+002607  2  AD 90 BF     	lda MLIDate
+00260A  2  29 E0        	and #$E0
+00260C  2  4A           	lsr
+00260D  2  4A           	lsr
+00260E  2  4A           	lsr
+00260F  2  4A           	lsr
+002610  2  4A           	lsr
+002611  2  85 EC        	sta SCRATCH1
+002613  2               
+002613  2  AD 91 BF     	lda MLIDate+1
+002616  2  29 01        	and #$01
+002618  2  0A           	asl
+002619  2  0A           	asl
+00261A  2  0A           	asl
+00261B  2  18           	clc
+00261C  2  65 EC        	adc SCRATCH1
+00261E  2               
+00261E  2               	; Multiply by 4 to turn into an index for MLIMonthStrings
+00261E  2  0A           	asl
+00261F  2  0A           	asl
+002620  2  A8           	tay
+002621  2               
+002621  2  A9 01        	lda #<MLIMonthStrings
+002623  2  85 1D        	sta POINTER
+002625  2  A9 33        	lda #>MLIMonthStrings
+002627  2  85 1E        	sta POINTER+1
+002629  2               
+002629  2               PDRenderDateTime_RenderMonth:
+002629  2  B1 1D        	lda (POINTER),y
+00262B  2  C9 00        	cmp #0
+00262D  2  F0 09        	beq PDRenderDateTime_RenderSep2
+00262F  2               
+00262F  2  09 80        	ora #$80
+002631  2  9D B6 2F     	sta MLIDateString,x
+002634  2  C8           	iny
+002635  2  E8           	inx
+002636  2  80 F1        	bra PDRenderDateTime_RenderMonth
+002638  2               
+002638  2               PDRenderDateTime_RenderSep2:
+002638  2  A9 AD        	lda #$AD                      ; -
+00263A  2  9D B6 2F     	sta MLIDateString,x
+00263D  2  E8           	inx
+00263E  2               
+00263E  2               	; Get the year
+00263E  2  AD 91 BF     	lda MLIDate+1
+002641  2  29 FE        	and #$FE
+002643  2  4A           	lsr
+002644  2               
+002644  2  DA           	phx
+002645  2  20 21 27     	jsr PDByteToDecimalString
+002648  2  FA           	plx
+002649  2               
+002649  2  A9 59        	lda #<MLIConvStr
+00264B  2  85 1D        	sta POINTER
+00264D  2  A9 2F        	lda #>MLIConvStr
+00264F  2  85 1E        	sta POINTER+1
+002651  2  A0 00        	ldy #0
+002653  2               
+002653  2               PDRenderDateTime_RenderYear:
+002653  2  B1 1D        	lda (POINTER),y
+002655  2  C9 00        	cmp #0
+002657  2  F0 07        	beq PDRenderDateTime_EndDate
+002659  2               
+002659  2  9D B6 2F     	sta MLIDateString,x
+00265C  2  C8           	iny
+00265D  2  E8           	inx
+00265E  2  80 F3        	bra PDRenderDateTime_RenderYear
+002660  2               
+002660  2               PDRenderDateTime_EndDate:
+002660  2  A9 00        	lda #0
+002662  2  9D B6 2F     	sta MLIDateString,x
+002665  2               
+002665  2               	; Get the time
+002665  2  AD 93 BF     	lda MLITime+1                      ; Hours
+002668  2               
+002668  2  20 21 27     	jsr PDByteToDecimalString
+00266B  2               
+00266B  2  A2 00        	ldx #0
+00266D  2  A0 00        	ldy #0
+00266F  2               
+00266F  2               PDRenderDateTime_RenderHours:
+00266F  2  B1 1D        	lda (POINTER),y
+002671  2  C9 00        	cmp #0
+002673  2  F0 07        	beq PDRenderDateTime_RenderTimeSep
+002675  2               
+002675  2  9D C0 2F     	sta MLITimeString,x
+002678  2  E8           	inx
+002679  2  C8           	iny
+00267A  2  80 F3        	bra PDRenderDateTime_RenderHours
+00267C  2               
+00267C  2               PDRenderDateTime_RenderTimeSep:
+00267C  2  A9 BA        	lda #$BA                          ; :
+00267E  2  9D C0 2F     	sta MLITimeString,x
+002681  2  E8           	inx
+002682  2               
+002682  2  AD 92 BF     	lda MLITime                       ; Minutes
+002685  2               
+002685  2  DA           	phx
+002686  2  20 21 27     	jsr PDByteToDecimalString
+002689  2  FA           	plx
+00268A  2               
+00268A  2  20 E6 27     	jsr PDStringZLength
+00268D  2               
+00268D  2  C9 01        	cmp #1
+00268F  2  F0 04        	beq PDRenderDateTime_LeadZero
+002691  2  A0 00        	ldy #0
+002693  2  80 08        	bra PDRenderDateTime_RenderMinutes
+002695  2               
+002695  2               PDRenderDateTime_LeadZero:
+002695  2  A0 00        	ldy #0
+002697  2  A9 B0        	lda #$b0
+002699  2  9D C0 2F     	sta MLITimeString,x
+00269C  2  E8           	inx
+00269D  2               PDRenderDateTime_RenderMinutes:
+00269D  2  B1 1D        	lda (POINTER),y
+00269F  2  C9 00        	cmp #0
+0026A1  2  F0 07        	beq PDRenderDateTime_EndTime
+0026A3  2               
+0026A3  2  9D C0 2F     	sta MLITimeString,x
+0026A6  2  E8           	inx
+0026A7  2  C8           	iny
+0026A8  2  80 F3        	bra PDRenderDateTime_RenderMinutes
+0026AA  2               
+0026AA  2               PDRenderDateTime_EndTime:
+0026AA  2  A9 00        	lda #0
+0026AC  2  9D C0 2F     	sta MLITimeString,x
+0026AF  2  80 20        	bra PDRenderDateTime_Return
+0026B1  2               
+0026B1  2               PDRenderDateTime_NoDate:
+0026B1  2  A9 33        	lda #>NODATE
+0026B3  2  85 1E        	sta POINTER+1
+0026B5  2  A9 60        	lda #<NODATE
+0026B7  2  85 1D        	sta POINTER
+0026B9  2               
+0026B9  2  A9 00        	lda #0
+0026BB  2  8D C0 2F     	sta MLITimeString
+0026BE  2               
+0026BE  2  A0 00        	ldy #0
+0026C0  2  A2 00        	ldx #0
+0026C2  2               PDRenderDateTime_RenderNoDate:
+0026C2  2  B1 1D        	lda (POINTER),y
+0026C4  2  C9 00        	cmp #0
+0026C6  2  F0 09        	beq PDRenderDateTime_Return
+0026C8  2               
+0026C8  2  09 80        	ora #$80
+0026CA  2  9D B6 2F     	sta MLIDateString,x
+0026CD  2  C8           	iny
+0026CE  2  E8           	inx
+0026CF  2  80 F1        	bra PDRenderDateTime_RenderNoDate
+0026D1  2               
+0026D1  2               PDRenderDateTime_Return:
+0026D1  2  7A FA 68     	RESTORE_AXY
+0026D4  2               
+0026D4  2  60           	rts
+0026D5  2               
+0026D5  2               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+0026D5  2               ; PDErrorFromCode
+0026D5  2               ; Params: A - Prodos Error Code
+0026D5  2               ; Puts a null terminated string with the error message into
+0026D5  2               ; MLIErrorString
+0026D5  2               PDErrorFromCode:
+0026D5  2  48 DA 5A     	SAVE_AXY
+0026D8  2               
+0026D8  2  85 EC        	sta SCRATCH1
+0026DA  2  A2 00        	ldx #0
+0026DC  2               
+0026DC  2               PDErrorFromCode_FindErrorInTable:
+0026DC  2  BD 03 30     	lda MLIErrorMessages,x
+0026DF  2  C5 EC        	cmp SCRATCH1
+0026E1  2  F0 0C        	beq PDErrorFromCode_FoundError
+0026E3  2               
+0026E3  2  BD 03 30     	lda MLIErrorMessages,x
+0026E6  2  C9 FF        	cmp #$FF
+0026E8  2  F0 13        	beq PDErrorFromCode_ErrorNotFound
+0026EA  2               
+0026EA  2  E8           	inx
+0026EB  2  E8           	inx
+0026EC  2  E8           	inx
+0026ED  2  80 ED        	bra PDErrorFromCode_FindErrorInTable
+0026EF  2               
+0026EF  2               PDErrorFromCode_FoundError:
+0026EF  2  E8           	inx
+0026F0  2  BD 03 30     	lda MLIErrorMessages,x
+0026F3  2  85 1D        	sta POINTER
+0026F5  2  E8           	inx
+0026F6  2  BD 03 30     	lda MLIErrorMessages,x
+0026F9  2  85 1E        	sta POINTER+1
+0026FB  2  80 08        	bra PDErrorFromCode_InitRender
+0026FD  2               
+0026FD  2               PDErrorFromCode_ErrorNotFound:
+0026FD  2  A9 E8        	lda #<ERRNOTFND
+0026FF  2  85 1D        	sta POINTER
+002701  2  A9 32        	lda #>ERRNOTFND
+002703  2  85 1E        	sta POINTER+1
+002705  2               
+002705  2               PDErrorFromCode_InitRender:
+002705  2  A0 00        	ldy #0
+002707  2  A2 00        	ldx #0
+002709  2               PDErrorFromCode_RenderError:
+002709  2  B1 1D        	lda (POINTER),y
+00270B  2  C9 00        	cmp #0
+00270D  2  F0 09        	beq PDErrorFromCode_EndRender
+00270F  2               
+00270F  2  09 80        	ora #$80
+002711  2  9D 93 2F     	sta MLIErrorString,x
+002714  2  E8           	inx
+002715  2  C8           	iny
+002716  2  80 F1        	bra PDErrorFromCode_RenderError
+002718  2               
+002718  2               PDErrorFromCode_EndRender:
+002718  2  A9 00        	lda #0
+00271A  2  9D 93 2F     	sta MLIErrorString,x
+00271D  2               
+00271D  2  7A FA 68     	RESTORE_AXY
+002720  2  60           	rts
+002721  2               
+002721  2               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+002721  2               ; PDByteToDecimalString
+002721  2               ; Params: A - Byte Value
+002721  2               ; Converts byte into a string representation of the decimal value.
+002721  2               PDByteToDecimalString:
+002721  2  48 DA 5A     	SAVE_AXY
+002724  2               
+002724  2  8D 56 2F     	sta MLIValue
+002727  2  9C 58 2F     	stz MLIIndex
+00272A  2               
+00272A  2  A9 00        	lda #$0
+00272C  2  8D 59 2F     	sta MLIConvStr
+00272F  2  8D 5A 2F     	sta MLIConvStr+1
+002732  2  8D 5B 2F     	sta MLIConvStr+2
+002735  2  8D 5C 2F     	sta MLIConvStr+3
+002738  2               
+002738  2  A2 02        	ldx #2
+00273A  2  8E 57 2F     	stx MLILead0
+00273D  2               @P1:
+00273D  2  A9 B0        	lda #$B0
+00273F  2  8D 55 2F     	sta MLIDigit
+002742  2               
+002742  2               @P2:
+002742  2  38           	sec
+002743  2  AD 56 2F     	lda MLIValue
+002746  2  FD 8F 2F     	sbc MLITable10,x
+002749  2  90 08        	bcc @P3
+00274B  2               
+00274B  2  8D 56 2F     	sta MLIValue
+00274E  2  EE 55 2F     	inc MLIDigit
+002751  2  80 EF        	bra @P2
+002753  2               
+002753  2               @P3:
+002753  2  AD 55 2F     	lda MLIDigit
+002756  2  E0 00        	cpx #0
+002758  2  F0 0C        	beq @P5
+00275A  2  C9 B0        	cmp #$B0
+00275C  2  F0 03        	beq @P4
+00275E  2  8D 57 2F     	sta MLILead0
+002761  2               
+002761  2               @P4:
+002761  2  2C 57 2F     	bit MLILead0
+002764  2  10 0B        	bpl @P6
+002766  2               
+002766  2               @P5:
+002766  2  DA           	phx
+002767  2  AE 58 2F     	ldx MLIIndex
+00276A  2  EE 58 2F     	inc MLIIndex
+00276D  2  9D 59 2F     	sta MLIConvStr,x
+002770  2  FA           	plx
+002771  2               
+002771  2               @P6:
+002771  2  CA           	dex
+002772  2  10 C9        	bpl @P1
+002774  2               
+002774  2  7A FA 68     	RESTORE_AXY
+002777  2  60           	rts
+002778  2               
+002778  2               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+002778  2               ; PDPrintBitmap
+002778  2               ; Prints the Prodos bitmap.  Displays 1 for a reserved page and
+002778  2               ; 0 for a free page.
+002778  2               PDPrintBitmap:
+002778  2  48 DA 5A     	SAVE_AXY
+00277B  2               
+00277B  2  A0 00        	ldy #0
+00277D  2               @NextByte:
+00277D  2  A2 00        	ldx #0
+00277F  2               @PrintBits:
+00277F  2  B9 58 BF     	lda MLIBitmap,y
+002782  2  3C 87 2F     	bit MLIReversePositionTable,x
+002785  2  D0 04        	bne @One
+002787  2               
+002787  2  A9 B0        	lda #$b0			; 0
+002789  2  80 02        	bra @Print
+00278B  2               
+00278B  2               @One:
+00278B  2  A9 B1        	lda #$b1			; 1
+00278D  2               
+00278D  2               @Print:
+00278D  2  20 F0 FD     	jsr COUT
+002790  2               
+002790  2  E8           	inx
+002791  2  E0 08        	cpx #8
+002793  2  D0 EA        	bne @PrintBits
+002795  2               
+002795  2  C8           	iny
+002796  2  98           	tya
+002797  2               
+002797  2               ;  if y % 6 == 0 print \n
+002797  2  38           	sec
+002798  2               @NextSub6:
+002798  2  E9 06        	sbc #6
+00279A  2  B0 FC        	bcs @NextSub6
+00279C  2  69 06        	adc #6
+00279E  2               
+00279E  2  C9 00        	cmp #0
+0027A0  2  D0 05        	bne @CheckDone
+0027A2  2               
+0027A2  2  A9 8D        	lda #$8d			; Return
+0027A4  2  20 F0 FD     	jsr COUT
+0027A7  2               
+0027A7  2               @CheckDone:
+0027A7  2  C0 18        	cpy #$18
+0027A9  2  90 D2        	bcc @NextByte
+0027AB  2               
+0027AB  2  7A FA 68     	RESTORE_AXY
+0027AE  2  60           	rts
+0027AF  2               
+0027AF  2               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+0027AF  2               ; PDPrintCurrentError
+0027AF  2               ; Updates current error message and prints it.
+0027AF  2               PDPrintCurrentError:
+0027AF  2  AD 92 2F     	lda MLIError
+0027B2  2  20 D5 26     	jsr PDErrorFromCode
+0027B5  2               
+0027B5  2               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+0027B5  2               ; PDPrintErrorString
+0027B5  2               ; Prints the current rendered error message.
+0027B5  2               PDPrintErrorString:
+0027B5  2  A9 2F        	lda #>MLIErrorString
+0027B7  2  85 1E        	sta POINTER+1
+0027B9  2  A9 93        	lda #<MLIErrorString
+0027BB  2  85 1D        	sta POINTER
+0027BD  2               
+0027BD  2  20 D0 27     	jsr PDPrintStringZ
+0027C0  2  60           	rts
+0027C1  2               
+0027C1  2               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+0027C1  2               ; PDPrintConvString
+0027C1  2               ; Prints the decimal string stored in MLIConvStr
+0027C1  2               PDPrintConvString:
+0027C1  2  20 21 27     	jsr PDByteToDecimalString
+0027C4  2               
+0027C4  2  A9 2F        	lda #>MLIConvStr
+0027C6  2  85 1E        	sta POINTER+1
+0027C8  2  A9 59        	lda #<MLIConvStr
+0027CA  2  85 1D        	sta POINTER
+0027CC  2               
+0027CC  2  20 D0 27     	jsr PDPrintStringZ
+0027CF  2  60           	rts
+0027D0  2               
+0027D0  2               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+0027D0  2               ; PDPrintStringZ
+0027D0  2               ; Prints null-terminated string whose address is stored in POINTER
+0027D0  2               PDPrintStringZ:
+0027D0  2  A0 00        	ldy #0
+0027D2  2               @Loop:
+0027D2  2  B1 1D        	lda (POINTER),y
+0027D4  2  C9 00        	cmp	#0
+0027D6  2  F0 08        	beq @Done
+0027D8  2               
+0027D8  2  09 80        	ora #$80
+0027DA  2  20 F0 FD     	jsr COUT
+0027DD  2  C8           	iny
+0027DE  2  80 F2        	bra @Loop
+0027E0  2               
+0027E0  2               @Done:
+0027E0  2  A9 8D        	lda	#$8d
+0027E2  2  20 F0 FD     	jsr COUT
+0027E5  2  60           	rts
+0027E6  2               
+0027E6  2               
+0027E6  2               
+0027E6  2               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+0027E6  2               ; PDStringZLength
+0027E6  2               ; Calculates the length of the null terminated string pointed to
+0027E6  2               ; by POINTER
+0027E6  2               ; Returns value in A
+0027E6  2               PDStringZLength:
+0027E6  2  5A           	phy
+0027E7  2  A0 00        	ldy #0
+0027E9  2               
+0027E9  2               @Loop:
+0027E9  2  B1 1D        	lda (POINTER),y
+0027EB  2  F0 03        	beq @Done
+0027ED  2  C8           	iny
+0027EE  2  80 F9        	bra @Loop
+0027F0  2               
+0027F0  2               @Done:
+0027F0  2  98           	tya
+0027F1  2  7A           	ply
+0027F2  2  60           	rts
+0027F3  2               
+0027F3  1               .include "syscalls.s"
+0027F3  2               ;
+0027F3  2               ;  syscalls.s
+0027F3  2               ;  Prodos MLI Syscalls
+0027F3  2               ;
+0027F3  2               
+0027F3  2               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+0027F3  2               ; PDSysOpen
+0027F3  2               ; Params:
+0027F3  2               ;    Stack: Address of file path string, Address of free buffer
+0027F3  2               ; Opens file, returns refnum in A
+0027F3  2               ; Set carry signals error
+0027F3  2               PDSysOpen:
+0027F3  2  68 8D 51 2F  	SAVE_RETURN
+0027F7  2  68 8D 52 2F  
+0027FB  2               
+0027FB  2               ; Store buffer address
+0027FB  2  68           	pla
+0027FC  2  8D 2B 2F     	sta MLIOpenParam+3
+0027FF  2  68           	pla
+002800  2  8D 2C 2F     	sta MLIOpenParam+4
+002803  2               
+002803  2               ; Store path Address
+002803  2  68           	pla
+002804  2  8D 29 2F     	sta MLIOpenParam+1
+002807  2  68           	pla
+002808  2  8D 2A 2F     	sta MLIOpenParam+2
+00280B  2               
+00280B  2  AD 52 2F 48  	RESTORE_RETURN
+00280F  2  AD 51 2F 48  
+002813  2               
+002813  2               ; Configure Syscall
+002813  2  A9 C8        	lda #MLIOpen
+002815  2  8D 4B 29     	sta MLICall
+002818  2               
+002818  2  A9 28        	lda #<MLIOpenParam
+00281A  2  8D 4C 29     	sta MLIParam
+00281D  2               
+00281D  2  A9 2F        	lda #>MLIOpenParam
+00281F  2  8D 4D 29     	sta MLIParam+1
+002822  2               
+002822  2               ; Let 'er rip
+002822  2  20 43 29     	jsr MLISyscall
+002825  2  B0 03          	bcs PDSysOpen_Error
+002827  2               
+002827  2  18             	clc
+002828  2  80 01        	bra PDSysOpen_Return
+00282A  2               
+00282A  2               PDSysOpen_Error:
+00282A  2  38             	sec
+00282B  2               
+00282B  2               PDSysOpen_Return:
+00282B  2  60           	rts
+00282C  2               
+00282C  2               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+00282C  2               ; PDSysClose
+00282C  2               ; Params:
+00282C  2               ;    Stack: Refnum of Open File
+00282C  2               ; Closes file
+00282C  2               ; Set carry signals error
+00282C  2               PDSysClose:
+00282C  2  A9 CC        	lda #MLIClose
+00282E  2  85 EC        	sta SCRATCH1
+002830  2  80 04        	bra PDProcessCloseFlush
+002832  2               
+002832  2               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+002832  2               ; PDSysFlush
+002832  2               ; Params:
+002832  2               ;    Stack: Refnum of Open File
+002832  2               ; Flushes file
+002832  2               ; Set carry signals error
+002832  2               PDSysFlush:
+002832  2  A9 CD        	lda #MLIFlush
+002834  2  85 EC        	sta SCRATCH1
+002836  2               
+002836  2               PDProcessCloseFlush:
+002836  2  68 8D 51 2F  	SAVE_RETURN
+00283A  2  68 8D 52 2F  
+00283E  2               
+00283E  2  68           	pla
+00283F  2  8D 3B 2F     	sta MLICloseFlushParam+1
+002842  2               
+002842  2  AD 52 2F 48  	RESTORE_RETURN
+002846  2  AD 51 2F 48  
+00284A  2               
+00284A  2  A5 EC        	lda SCRATCH1
+00284C  2  8D 4B 29     	sta MLICall
+00284F  2               
+00284F  2  A9 3A        	lda #<MLICloseFlushParam
+002851  2  8D 4C 29     	sta MLIParam
+002854  2  A9 2F        	lda #>MLICloseFlushParam
+002856  2  8D 4D 29     	sta MLIParam+1
+002859  2               
+002859  2  20 43 29       	jsr MLISyscall
+00285C  2  B0 03          	bcs PDProcessCloseFlush_Error
+00285E  2               
+00285E  2  18             	clc
+00285F  2  80 01          	bra PDProcessCloseFlush_Return
+002861  2               
+002861  2               PDProcessCloseFlush_Error:
+002861  2  38             	sec
+002862  2               
+002862  2               PDProcessCloseFlush_Return:
+002862  2  60             	rts
+002863  2               
+002863  2               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+002863  2               ; PDSysRead
+002863  2               ; Params:
+002863  2               ;    Stack: Refnum from Open File
+002863  2               ;           Destination Address
+002863  2               ;           Number of bytes to read
+002863  2               ; Reads Number of Bytes from open file into Destination Address
+002863  2               ; Set carry signals error
+002863  2               PDSysRead:
+002863  2  A9 CA        	lda #MLIRead
+002865  2  85 EC        	sta SCRATCH1
+002867  2  80 04        	bra PDSysReadWrite
+002869  2               
+002869  2               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+002869  2               ; PDSysWrite
+002869  2               ; Params:
+002869  2               ;    Stack: Refnum from Open File
+002869  2               ;           Source Address
+002869  2               ;           Number of bytes to write
+002869  2               ; Writes Number of Bytes destination address into open file
+002869  2               ; Set carry signals error
+002869  2               PDSysWrite:
+002869  2  A9 CB        	lda #MLIWrite
+00286B  2  85 EC        	sta SCRATCH1
+00286D  2               
+00286D  2               PDSysReadWrite:
+00286D  2               ; Save return address
+00286D  2  68 8D 51 2F  	SAVE_RETURN
+002871  2  68 8D 52 2F  
+002875  2               
+002875  2               ; Get Refnum
+002875  2  68           	pla
+002876  2  8D 33 2F     	sta MLIReadWriteParam+1
+002879  2               
+002879  2               ; Get Destination Address
+002879  2  68           	pla
+00287A  2  8D 34 2F     	sta MLIReadWriteParam+2
+00287D  2  68           	pla
+00287E  2  8D 35 2F     	sta MLIReadWriteParam+3
+002881  2               
+002881  2               ; Get number of bytes to Read or Write
+002881  2  68           	pla
+002882  2  8D 36 2F     	sta MLIReadWriteParam+4
+002885  2  68           	pla
+002886  2  8D 37 2F     	sta MLIReadWriteParam+5
+002889  2               
+002889  2  AD 52 2F 48  	RESTORE_RETURN
+00288D  2  AD 51 2F 48  
+002891  2               
+002891  2               ; Setup MLISyscall
+002891  2  A5 EC        	lda SCRATCH1
+002893  2  8D 4B 29       	sta MLICall
+002896  2               
+002896  2  A9 32        	lda #<MLIReadWriteParam
+002898  2  8D 4C 29     	sta MLIParam
+00289B  2  A9 2F        	lda #>MLIReadWriteParam
+00289D  2  8D 4D 29     	sta MLIParam+1
+0028A0  2               
+0028A0  2  20 43 29       	jsr MLISyscall
+0028A3  2  B0 03          	bcs PDSysReadWrite_Error
+0028A5  2               
+0028A5  2  18             	clc
+0028A6  2  80 01          	bra PDSysReadWrite_Return
+0028A8  2               
+0028A8  2               PDSysReadWrite_Error:
+0028A8  2  38             	sec
+0028A9  2               
+0028A9  2               PDSysReadWrite_Return:
+0028A9  2  60             	rts
+0028AA  2               
+0028AA  2               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+0028AA  2               ; PDSysGetTime
+0028AA  2               ; Params: None
+0028AA  2               ; Stores in the current date and time in MLIDate and MLITime
+0028AA  2               PDSysGetTime:
+0028AA  2  A9 82        	lda #MLIGetTime
+0028AC  2  8D 4B 29     	sta MLICall
+0028AF  2               
+0028AF  2  20 43 29       	jsr MLISyscall
+0028B2  2  B0 03          	bcs PDSysGetTime_Error
+0028B4  2               
+0028B4  2  18             	clc
+0028B5  2  80 01          	bra PDSysGetTime_Return
+0028B7  2               
+0028B7  2               PDSysGetTime_Error:
+0028B7  2  38             	sec
+0028B8  2               
+0028B8  2               PDSysGetTime_Return:
+0028B8  2  60             	rts
+0028B9  2               
+0028B9  2               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+0028B9  2               ; PDSysGetFileInfo
+0028B9  2               ; Params:
+0028B9  2               ;    Stack: Address to Prodos spec path
+0028B9  2               ; Set carry signals error
+0028B9  2               PDSysGetFileInfo:
+0028B9  2  68 8D 51 2F  	SAVE_RETURN
+0028BD  2  68 8D 52 2F  
+0028C1  2               
+0028C1  2               ; Store filepath address
+0028C1  2  68           	pla
+0028C2  2  8D D1 2D     	sta MLIGetFileInfoParam+1
+0028C5  2  68           	pla
+0028C6  2  8D D2 2D     	sta MLIGetFileInfoParam+2
+0028C9  2               
+0028C9  2  AD 52 2F 48  	RESTORE_RETURN
+0028CD  2  AD 51 2F 48  
+0028D1  2               
+0028D1  2  A9 C4        	lda #MLIGetFileInfo
+0028D3  2  8D 4B 29     	sta MLICall
+0028D6  2               
+0028D6  2  A9 D0        	lda #<MLIGetFileInfoParam
+0028D8  2  8D 4C 29     	sta MLIParam
+0028DB  2  A9 2D        	lda #>MLIGetFileInfoParam
+0028DD  2  8D 4D 29     	sta MLIParam+1
+0028E0  2               
+0028E0  2  20 43 29       	jsr MLISyscall
+0028E3  2  B0 03          	bcs PDSysGetFileInfo_Error
+0028E5  2               
+0028E5  2  18             	clc
+0028E6  2  80 01          	bra PDSysGetFileInfo_Return
+0028E8  2               
+0028E8  2               PDSysGetFileInfo_Error:
+0028E8  2  38             	sec
+0028E9  2               
+0028E9  2               PDSysGetFileInfo_Return:
+0028E9  2  60             	rts
+0028EA  2               
+0028EA  2               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+0028EA  2               ; PDSysGetMark
+0028EA  2               ; Params:
+0028EA  2               ;    Stack: File Reference Number
+0028EA  2               ; Set carry signals error
+0028EA  2               PDSysGetMark:
+0028EA  2  A9 CF        	lda #MLIGetMark
+0028EC  2  85 EC        	sta SCRATCH1
+0028EE  2  80 10        	bra PDProcessGetSetMarkEOF
+0028F0  2               
+0028F0  2               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+0028F0  2               ; PDSysSetMark
+0028F0  2               ; Params:
+0028F0  2               ;    Stack: File Reference Number
+0028F0  2               ; Set carry signals error
+0028F0  2               PDSysSetMark:
+0028F0  2  A9 CE        	lda #MLISetMark
+0028F2  2  85 EC        	sta SCRATCH1
+0028F4  2  80 0A        	bra PDProcessGetSetMarkEOF
+0028F6  2               
+0028F6  2               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+0028F6  2               ; PDSysSetEOF
+0028F6  2               ; Params:
+0028F6  2               ;    Stack: File Reference Number
+0028F6  2               ; Set carry signals error
+0028F6  2               PDSysSetEOF:
+0028F6  2  A9 D0        	lda #MLISetEOF
+0028F8  2  85 EC        	sta SCRATCH1
+0028FA  2  80 04        	bra PDProcessGetSetMarkEOF
+0028FC  2               
+0028FC  2               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+0028FC  2               ; PDSysGetEOF
+0028FC  2               ; Params:
+0028FC  2               ;    Stack: File Reference Number
+0028FC  2               ; Set carry signals error
+0028FC  2               PDSysGetEOF:
+0028FC  2  A9 D1        	lda #MLIGetEOF
+0028FE  2  85 EC        	sta SCRATCH1
+002900  2               
+002900  2               PDProcessGetSetMarkEOF:
+002900  2  68 8D 51 2F  	SAVE_RETURN
+002904  2  68 8D 52 2F  
+002908  2               
+002908  2               ; Store Reference Number
+002908  2  68           	pla
+002909  2  8D 3D 2F     	sta MLIGetSetMarkEOFParam+1
+00290C  2               
+00290C  2               ; Getting doesn't need to put marker/eof on stack, skip it.
+00290C  2  A5 EC        	lda SCRATCH1
+00290E  2  C9 D1        	cmp #MLIGetEOF
+002910  2  F0 10        	beq PDProcessGetSetMarkEOF_Execute
+002912  2  C9 CF        	cmp #MLIGetMark
+002914  2  F0 0C        	beq PDProcessGetSetMarkEOF_Execute
+002916  2               
+002916  2               ; Store EOF/Mark
+002916  2  68           	pla
+002917  2  8D 3E 2F     	sta MLIGetSetMarkEOFParam+2
+00291A  2  68           	pla
+00291B  2  8D 3F 2F     	sta MLIGetSetMarkEOFParam+3
+00291E  2  68           	pla
+00291F  2  8D 40 2F     	sta MLIGetSetMarkEOFParam+4
+002922  2               
+002922  2               PDProcessGetSetMarkEOF_Execute:
+002922  2  AD 52 2F 48  	RESTORE_RETURN
+002926  2  AD 51 2F 48  
+00292A  2               
+00292A  2  A5 EC        	lda SCRATCH1
+00292C  2  8D 4B 29     	sta MLICall
+00292F  2               
+00292F  2  A9 3C        	lda #<MLIGetSetMarkEOFParam
+002931  2  8D 4C 29     	sta MLIParam
+002934  2  A9 2F        	lda #>MLIGetSetMarkEOFParam
+002936  2  8D 4D 29     	sta MLIParam+1
+002939  2               
+002939  2  20 43 29       	jsr MLISyscall
+00293C  2  B0 03          	bcs PDProcessGetSetMarkEOF_Error
+00293E  2               
+00293E  2  18             	clc
+00293F  2  80 01          	bra PDProcessGetSetMarkEOF_Return
+002941  2               
+002941  2               PDProcessGetSetMarkEOF_Error:
+002941  2  38             	sec
+002942  2               
+002942  2               PDProcessGetSetMarkEOF_Return:
+002942  2  60             	rts
+002943  2               
+002943  2               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+002943  2               ; MLISyscall
+002943  2               ; Params: None
+002943  2               ; Executes the MLI command stored in MLICall using
+002943  2               ; the parameter block stored in MLIParam
+002943  2               ; Set carry signals error.
+002943  2               ; Error code stored in MLIError
+002943  2               ; Error code message stored in MLIErrorString
+002943  2               MLISyscall:
+002943  2               ; Clear error code
+002943  2  A9 00          	lda #$0
+002945  2  8D 92 2F     	sta MLIError
+002948  2               
+002948  2               ; Execute call
+002948  2  20 00 BF     	jsr MLI
+00294B  2               
+00294B  2               ; These are modified by calling wrapper
+00294B  2               MLICall:
+00294B  2  FF             	.byte $ff
+00294C  2               MLIParam:
+00294C  2  FF FF        	.addr $ffff
+00294E  2               
+00294E  2  8D 92 2F     	sta MLIError
+002951  2               
+002951  2               ; Error in call?
+002951  2  D0 03        	bne MLISyscall_Error
+002953  2               
+002953  2  18             	clc
+002954  2  80 04        	bra MLISyscall_Return
+002956  2               
+002956  2               MLISyscall_Error:
+002956  2               ; Write error message to MLIErrorString
+002956  2  20 D5 26       	jsr PDErrorFromCode
+002959  2  38             	sec
+00295A  2               
+00295A  2               MLISyscall_Return:
+00295A  2  60             	rts
+00295B  2               
+00295B  1               
+00295B  1               ; Functional modules
+00295B  1               .include "files.s"
+00295B  2               ;
+00295B  2               ;  files.s
+00295B  2               ;  PDos File Handling
+00295B  2               ;
+00295B  2               
+00295B  2               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+00295B  2               ; PDOpenFile
+00295B  2               PDOpenFile:
+00295B  2  48 DA 5A     	SAVE_AXY
+00295E  2               
+00295E  2  A5 19        	lda	PDPARAM0
+002960  2  8D 66 2F     	sta PDFileStruct
+002963  2  85 1D        	sta POINTER
+002965  2  A5 1A        	lda PDPARAM1
+002967  2  8D 67 2F     	sta PDFileStruct+1
+00296A  2  85 1E        	sta POINTER+1
+00296C  2               
+00296C  2  A0 0C        	ldy #12
+00296E  2  A2 00        	ldx #0
+002970  2               PDOpenFile_CountChars:
+002970  2  B1 1D        	lda (POINTER),y
+002972  2  C9 00        	cmp #0
+002974  2  F0 04        	beq PDOpenFile_CountDone
+002976  2               
+002976  2  E8           	inx
+002977  2  C8           	iny
+002978  2  80 F6        	bra PDOpenFile_CountChars
+00297A  2               
+00297A  2               PDOpenFile_CountDone:
+00297A  2  8A           	txa
+00297B  2  A0 0B        	ldy #11
+00297D  2  91 1D        	sta (POINTER),y
+00297F  2               
+00297F  2  20 0C 25     	jsr PDFindBuffer
+002982  2  90 03        	bcc PDOpenFile_SetupFilePathAddr
+002984  2  4C 08 2A     	jmp PDOpenFile_Error
+002987  2               
+002987  2               PDOpenFile_SetupFilePathAddr:
+002987  2  8D 77 2F     	sta PDFileBufferScratch+1
+00298A  2  9C 76 2F     	stz PDFileBufferScratch
+00298D  2               
+00298D  2  A9 0B        	lda #11
+00298F  2  8D 68 2F     	sta PDFilePathAddr
+002992  2  9C 69 2F     	stz PDFilePathAddr+1
+002995  2               
+002995  2  18           	clc
+002996  2  AD 66 2F     	lda	PDFileStruct
+002999  2  6D 68 2F     	adc PDFilePathAddr
+00299C  2  8D 68 2F     	sta PDFilePathAddr
+00299F  2  AD 67 2F     	lda PDFileStruct+1
+0029A2  2  6D 69 2F     	adc PDFilePathAddr+1
+0029A5  2  8D 69 2F     	sta PDFilePathAddr+1
+0029A8  2               
+0029A8  2               ; File Path Address
+0029A8  2  AD 69 2F     	lda PDFilePathAddr+1
+0029AB  2  48           	pha
+0029AC  2  AD 68 2F     	lda PDFilePathAddr
+0029AF  2  48           	pha
+0029B0  2               
+0029B0  2               ; Buffer address
+0029B0  2  AD 77 2F     	lda	PDFileBufferScratch+1
+0029B3  2  48           	pha
+0029B4  2  AD 76 2F     	lda	PDFileBufferScratch
+0029B7  2  48           	pha
+0029B8  2               
+0029B8  2  20 F3 27     	jsr PDSysOpen
+0029BB  2  B0 4B        	bcs PDOpenFile_Error
+0029BD  2               
+0029BD  2               ; Store Ref Num
+0029BD  2  AD 2D 2F     	lda MLIOpenParam+5
+0029C0  2  A0 00        	ldy #0
+0029C2  2  91 1D        	sta (POINTER),y
+0029C4  2               
+0029C4  2               ; Check if destination address is entered. If so,
+0029C4  2               ; skip loading aux type.
+0029C4  2  A0 0A        	ldy #10
+0029C6  2  B1 1D        	lda (POINTER),y
+0029C8  2  C9 00        	cmp #0
+0029CA  2  D0 1C        	bne PDOpenFile_SkipAuxType
+0029CC  2               
+0029CC  2               ; Get Aux Type
+0029CC  2  AD 66 2F     	lda PDFileStruct
+0029CF  2  85 19        	sta PDPARAM0
+0029D1  2  AD 67 2F     	lda PDFileStruct+1
+0029D4  2  85 1A        	sta PDPARAM1
+0029D6  2               
+0029D6  2  20 68 2B     	jsr PDGetInfo
+0029D9  2  B0 2D        	bcs PDOpenFile_Error
+0029DB  2               
+0029DB  2  AD CA 2F     	lda PDFileInfo_AuxType
+0029DE  2  A0 09        	ldy #9
+0029E0  2  91 1D        	sta (POINTER),y
+0029E2  2  C8           	iny
+0029E3  2  AD CB 2F     	lda PDFileInfo_AuxType+1
+0029E6  2  91 1D        	sta (POINTER),y
+0029E8  2               
+0029E8  2               PDOpenFile_SkipAuxType:
+0029E8  2               ; Get EOF
+0029E8  2  A0 00        	ldy #0
+0029EA  2  B1 1D        	lda (POINTER),y
+0029EC  2  48           	pha
+0029ED  2               
+0029ED  2  20 FC 28     	jsr PDSysGetEOF
+0029F0  2  B0 16        	bcs PDOpenFile_Error
+0029F2  2               
+0029F2  2  A0 01        	ldy #1
+0029F4  2  AD 3E 2F     	lda MLIGetSetMarkEOFParam+2
+0029F7  2  91 1D        	sta (POINTER),y
+0029F9  2  C8           	iny
+0029FA  2  AD 3F 2F     	lda MLIGetSetMarkEOFParam+3
+0029FD  2  91 1D        	sta (POINTER),y
+0029FF  2  C8           	iny
+002A00  2  AD 40 2F     	lda MLIGetSetMarkEOFParam+4
+002A03  2  91 1D        	sta (POINTER),y
+002A05  2               
+002A05  2  18           	clc
+002A06  2  80 01        	bra PDOpenFile_Return
+002A08  2               
+002A08  2               PDOpenFile_Error:
+002A08  2  38           	sec
+002A09  2               
+002A09  2               PDOpenFile_Return:
+002A09  2  7A FA 68     	RESTORE_AXY
+002A0C  2  60           	rts
+002A0D  2               
+002A0D  2               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+002A0D  2               ; PDCloseFile
+002A0D  2               PDCloseFile:
+002A0D  2  48 DA 5A     	SAVE_AXY
+002A10  2               
+002A10  2  A5 19        	lda PDPARAM0
+002A12  2  85 1D        	sta POINTER
+002A14  2  A5 1A        	lda PDPARAM1
+002A16  2  85 1E        	sta POINTER+1
+002A18  2               
+002A18  2  A0 00        	ldy #0
+002A1A  2  B1 1D        	lda (POINTER),y
+002A1C  2  48           	pha
+002A1D  2               
+002A1D  2  20 2C 28     	jsr PDSysClose
+002A20  2  B0 2A        	bcs PDCloseFile_Error
+002A22  2               
+002A22  2               ; Clear File Struct
+002A22  2  A9 00        	lda #0
+002A24  2  A0 00        	ldy #0
+002A26  2  91 1D        	sta (POINTER),y
+002A28  2               
+002A28  2  C8           	iny
+002A29  2  91 1D        	sta (POINTER),y
+002A2B  2  C8           	iny
+002A2C  2  91 1D        	sta (POINTER),y
+002A2E  2  C8           	iny
+002A2F  2  91 1D        	sta (POINTER),y
+002A31  2               
+002A31  2  C8           	iny
+002A32  2  91 1D        	sta (POINTER),y
+002A34  2  C8           	iny
+002A35  2  91 1D        	sta (POINTER),y
+002A37  2  C8           	iny
+002A38  2  91 1D        	sta (POINTER),y
+002A3A  2               
+002A3A  2  C8           	iny
+002A3B  2  91 1D        	sta (POINTER),y
+002A3D  2  C8           	iny
+002A3E  2  91 1D        	sta (POINTER),y
+002A40  2               
+002A40  2  C8           	iny
+002A41  2  91 1D        	sta (POINTER),y
+002A43  2  C8           	iny
+002A44  2  91 1D        	sta (POINTER),y
+002A46  2               
+002A46  2  C8           	iny
+002A47  2  91 1D        	sta (POINTER),y
+002A49  2               
+002A49  2  18           	clc
+002A4A  2  80 01        	bra PDCloseFile_Return
+002A4C  2               
+002A4C  2               PDCloseFile_Error:
+002A4C  2  38           	sec
+002A4D  2               
+002A4D  2               PDCloseFile_Return:
+002A4D  2  7A FA 68     	RESTORE_AXY
+002A50  2  60           	rts
+002A51  2               
+002A51  2               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+002A51  2               ; PDReadFile
+002A51  2               PDReadFile:
+002A51  2  48 DA 5A     	SAVE_AXY
+002A54  2               
+002A54  2  A9 01        	lda	#1
+002A56  2  8D 6F 2F     	sta PDReadCount
+002A59  2               
+002A59  2  A5 19        	lda	PDPARAM0
+002A5B  2  8D 66 2F     	sta PDFileStruct
+002A5E  2  85 1D        	sta POINTER
+002A60  2  A5 1A        	lda PDPARAM1
+002A62  2  8D 67 2F     	sta PDFileStruct+1
+002A65  2  85 1E        	sta POINTER+1
+002A67  2               
+002A67  2               ; If Byte Count is 0 then we will read in the entire file,
+002A67  2               ; otherwise we will respect the byte count.
+002A67  2  A0 08        	ldy #8
+002A69  2  B1 1D        	lda (POINTER),y
+002A6B  2  8D 6D 2F     	sta PDByteCount
+002A6E  2  88           	dey
+002A6F  2  B1 1D        	lda (POINTER),y
+002A71  2  8D 6E 2F     	sta PDByteCount+1
+002A74  2               
+002A74  2  AD 6D 2F     	lda PDByteCount
+002A77  2  D0 07        	bne PDReadFile_UserDefinedCount
+002A79  2  AD 6E 2F     	lda PDByteCount+1
+002A7C  2  D0 02        	bne PDReadFile_UserDefinedCount
+002A7E  2               
+002A7E  2  80 03        	bra PDReadFile_CountZero
+002A80  2               
+002A80  2               PDReadFile_UserDefinedCount:
+002A80  2  4C 09 2B     	jmp PDReadFile_ReadFile
+002A83  2               
+002A83  2               PDReadFile_CountZero:
+002A83  2               ; If high byte of File length is zero we can read the
+002A83  2               ; entire file with one read operation.
+002A83  2  A0 03        	ldy #3
+002A85  2  B1 1D        	lda (POINTER),y
+002A87  2  C9 00        	cmp #0
+002A89  2  F0 45        	beq PDReadFile_ReadCountSet
+002A8B  2               
+002A8B  2               ; Otherwise, set byte count to maximum value $ffff
+002A8B  2  A9 FF        	lda #$ff
+002A8D  2  A0 07        	ldy #7
+002A8F  2  91 1D        	sta (POINTER),y
+002A91  2  8D 70 2F     	sta PDReadSize
+002A94  2  C8           	iny
+002A95  2  91 1D        	sta (POINTER),y
+002A97  2  8D 71 2F     	sta PDReadSize+1
+002A9A  2               
+002A9A  2  A0 01        	ldy #1
+002A9C  2  B1 1D        	lda (POINTER),y
+002A9E  2  8D 73 2F     	sta PDRemainingBytes
+002AA1  2  C8           	iny
+002AA2  2  B1 1D        	lda (POINTER),y
+002AA4  2  8D 74 2F     	sta PDRemainingBytes+1
+002AA7  2  C8           	iny
+002AA8  2  B1 1D        	lda (POINTER),y
+002AAA  2  8D 75 2F     	sta PDRemainingBytes+2
+002AAD  2               
+002AAD  2               ; Calculate number of reads necessary by subtracting Byte Count from Total bytes
+002AAD  2               ; in the file until it goes negative.
+002AAD  2               PDReadFile_CalcReadCount:
+002AAD  2  38           	sec
+002AAE  2  AD 73 2F     	lda PDRemainingBytes
+002AB1  2  ED 70 2F     	sbc PDReadSize
+002AB4  2  8D 73 2F     	sta PDRemainingBytes
+002AB7  2  AD 74 2F     	lda PDRemainingBytes+1
+002ABA  2  ED 71 2F     	sbc PDReadSize+1
+002ABD  2  8D 74 2F     	sta PDRemainingBytes+1
+002AC0  2  AD 75 2F     	lda PDRemainingBytes+2
+002AC3  2  ED 72 2F     	sbc PDReadSize+2
+002AC6  2  8D 75 2F     	sta PDRemainingBytes+2
+002AC9  2  90 05        	bcc PDReadFile_ReadCountSet
+002ACB  2               
+002ACB  2  EE 6F 2F     	inc PDReadCount
+002ACE  2  80 DD        	bra PDReadFile_CalcReadCount
+002AD0  2               
+002AD0  2               PDReadFile_ReadCountSet:
+002AD0  2               ; Reset Remaining Bytes
+002AD0  2  A0 01        	ldy #1
+002AD2  2  B1 1D        	lda (POINTER),y
+002AD4  2  8D 73 2F     	sta PDRemainingBytes
+002AD7  2  C8           	iny
+002AD8  2  B1 1D        	lda (POINTER),y
+002ADA  2  8D 74 2F     	sta PDRemainingBytes+1
+002ADD  2  C8           	iny
+002ADE  2  B1 1D        	lda (POINTER),y
+002AE0  2  8D 75 2F     	sta PDRemainingBytes+2
+002AE3  2               
+002AE3  2               ; If we can read the whole file in at once, set the byte count to the size of the file.
+002AE3  2  AD 6F 2F     	lda PDReadCount
+002AE6  2  C9 01        	cmp #1
+002AE8  2  F0 0F        	beq PDReadFile_SetCountToEOF
+002AEA  2               
+002AEA  2               ; Otherwise set it to PDReadSize bytes
+002AEA  2  A0 07        	ldy #7
+002AEC  2  AD 70 2F     	lda PDReadSize
+002AEF  2  91 1D        	sta (POINTER),y
+002AF1  2  C8           	iny
+002AF2  2  AD 71 2F     	lda PDReadSize+1
+002AF5  2  91 1D        	sta (POINTER),y
+002AF7  2  80 10        	bra PDReadFile_ReadFile
+002AF9  2               
+002AF9  2               PDReadFile_SetCountToEOF:
+002AF9  2  A0 01        	ldy #1
+002AFB  2  B1 1D        	lda (POINTER),y
+002AFD  2  A0 07        	ldy #7
+002AFF  2  91 1D        	sta (POINTER),y
+002B01  2               
+002B01  2  A0 02        	ldy #2
+002B03  2  B1 1D        	lda (POINTER),y
+002B05  2  A0 08        	ldy #8
+002B07  2  91 1D        	sta (POINTER),y
+002B09  2               
+002B09  2               PDReadFile_ReadFile:
+002B09  2               ; Push Byte Count on Stack
+002B09  2  A0 08        	ldy #8
+002B0B  2  B1 1D        	lda (POINTER),y
+002B0D  2  48           	pha
+002B0E  2  88           	dey
+002B0F  2  B1 1D        	lda (POINTER),y
+002B11  2  48           	pha
+002B12  2               
+002B12  2               ; Push Destination Address
+002B12  2  A0 0A        	ldy #10
+002B14  2  B1 1D        	lda (POINTER),y
+002B16  2  48           	pha
+002B17  2  88           	dey
+002B18  2  B1 1D        	lda (POINTER),y
+002B1A  2  48           	pha
+002B1B  2               
+002B1B  2               ; Push Reference Number
+002B1B  2  A0 00        	ldy #0
+002B1D  2  B1 1D        	lda (POINTER),y
+002B1F  2  48           	pha
+002B20  2               
+002B20  2  20 63 28     	jsr PDSysRead
+002B23  2  B0 3E        	bcs PDReadFile_Error
+002B25  2               
+002B25  2  CE 6F 2F     	dec PDReadCount
+002B28  2  C9 00        	cmp #0
+002B2A  2  F0 34        	beq PDReadFile_Finished
+002B2C  2               
+002B2C  2               ; Subtract Read Size from Remaining Bytes
+002B2C  2  38           	sec
+002B2D  2  AD 73 2F     	lda PDRemainingBytes
+002B30  2  ED 70 2F     	sbc PDReadSize
+002B33  2  8D 73 2F     	sta PDRemainingBytes
+002B36  2  AD 74 2F     	lda PDRemainingBytes+1
+002B39  2  ED 71 2F     	sbc PDReadSize+1
+002B3C  2  8D 74 2F     	sta PDRemainingBytes+1
+002B3F  2  AD 75 2F     	lda PDRemainingBytes+2
+002B42  2  ED 72 2F     	sbc PDReadSize+2
+002B45  2  8D 75 2F     	sta PDRemainingBytes+2
+002B48  2               
+002B48  2               ; Are the remaining bytes less or equal to $FFFF?
+002B48  2  AD 75 2F     	lda PDRemainingBytes+2
+002B4B  2  C9 00        	cmp #0
+002B4D  2  F0 02        	beq PDReadFile_SetFinalReadSize
+002B4F  2  80 0D        	bra PDReadFile_ReadAgain
+002B51  2               
+002B51  2               PDReadFile_SetFinalReadSize:
+002B51  2               ; Yes, set byte count to final number of bytes
+002B51  2  AD 73 2F     	lda PDRemainingBytes
+002B54  2  A0 07        	ldy #7
+002B56  2  91 1D        	sta (POINTER),y
+002B58  2  C8           	iny
+002B59  2  AD 74 2F     	lda PDRemainingBytes+1
+002B5C  2  91 1D        	sta (POINTER),y
+002B5E  2               
+002B5E  2               PDReadFile_ReadAgain:
+002B5E  2  80 A9        	bra PDReadFile_ReadFile
+002B60  2               
+002B60  2               PDReadFile_Finished:
+002B60  2  18           	clc
+002B61  2  80 01        	bra PDReadFile_Return
+002B63  2               
+002B63  2               PDReadFile_Error:
+002B63  2  38           	sec
+002B64  2               
+002B64  2               PDReadFile_Return:
+002B64  2  7A FA 68     	RESTORE_AXY
+002B67  2  60           	rts
+002B68  2               
+002B68  2               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+002B68  2               ; PDGetInfo
+002B68  2               PDGetInfo:
+002B68  2  48 DA 5A     	SAVE_AXY
+002B6B  2               
+002B6B  2  A5 19        	lda	PDPARAM0
+002B6D  2  8D 66 2F     	sta PDFileStruct
+002B70  2  A5 1A        	lda PDPARAM1
+002B72  2  8D 67 2F     	sta PDFileStruct+1
+002B75  2               
+002B75  2               ; Calculate address of file path 11 bytes into PDFileStruct
+002B75  2  A9 0B        	lda #11
+002B77  2  8D 68 2F     	sta PDFilePathAddr
+002B7A  2  9C 69 2F     	stz PDFilePathAddr+1
+002B7D  2               
+002B7D  2  18           	clc
+002B7E  2  AD 66 2F     	lda	PDFileStruct
+002B81  2  6D 68 2F     	adc PDFilePathAddr
+002B84  2  8D 68 2F     	sta PDFilePathAddr
+002B87  2  AD 67 2F     	lda PDFileStruct+1
+002B8A  2  6D 69 2F     	adc PDFilePathAddr+1
+002B8D  2  8D 69 2F     	sta PDFilePathAddr+1
+002B90  2               
+002B90  2  AD 69 2F     	lda PDFilePathAddr+1
+002B93  2  48           	pha
+002B94  2  AD 68 2F     	lda PDFilePathAddr
+002B97  2  48           	pha
+002B98  2               
+002B98  2  20 B9 28     	jsr PDSysGetFileInfo
+002B9B  2  B0 15        	bcs PDGetInfo_Error
+002B9D  2               
+002B9D  2               ; Copy result into PDFileInfo struct
+002B9D  2  A2 01        	ldx #1
+002B9F  2  A0 00        	ldy #0
+002BA1  2               PDGetInfo_CopyInfo:
+002BA1  2  BD D0 2D     	lda MLIGetFileInfoParam,x
+002BA4  2  99 C6 2F     	sta PDFileInfo,y
+002BA7  2               
+002BA7  2  E8           	inx
+002BA8  2  C8           	iny
+002BA9  2  E0 12        	cpx #18
+002BAB  2  F0 02        	beq PDGetInfo_CopyDone
+002BAD  2  80 F2        	bra PDGetInfo_CopyInfo
+002BAF  2               
+002BAF  2               PDGetInfo_CopyDone:
+002BAF  2  18           	clc
+002BB0  2  80 01        	bra PDGetInfo_Return
+002BB2  2               PDGetInfo_Error:
+002BB2  2  38           	sec
+002BB3  2               PDGetInfo_Return:
+002BB3  2  7A FA 68     	RESTORE_AXY
+002BB6  2  60           	rts
+002BB7  2               
+002BB7  2               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+002BB7  2               ; PDSetEOF
+002BB7  2               PDSetEOF:
+002BB7  2  48 DA 5A     	SAVE_AXY
+002BBA  2               
+002BBA  2  A5 19        	lda	PDPARAM0
+002BBC  2  8D 66 2F     	sta PDFileStruct
+002BBF  2  A5 1A        	lda PDPARAM1
+002BC1  2  8D 67 2F     	sta PDFileStruct+1
+002BC4  2               
+002BC4  2               ; Push new EOF Marker
+002BC4  2  A0 03        	ldy #3
+002BC6  2  B1 1D        	lda (POINTER),y
+002BC8  2  48           	pha
+002BC9  2  88           	dey
+002BCA  2  B1 1D        	lda (POINTER),y
+002BCC  2  48           	pha
+002BCD  2  88           	dey
+002BCE  2  B1 1D        	lda (POINTER),y
+002BD0  2  48           	pha
+002BD1  2               
+002BD1  2               ; Push Reference Number
+002BD1  2  A0 00        	ldy #0
+002BD3  2  B1 1D        	lda (POINTER),y
+002BD5  2  48           	pha
+002BD6  2               
+002BD6  2  20 F6 28     	jsr PDSysSetEOF
+002BD9  2  B0 03        	bcs PDSetEOF_Error
+002BDB  2               
+002BDB  2  18           	clc
+002BDC  2  80 01        	bra PDSetEOF_Return
+002BDE  2               
+002BDE  2               PDSetEOF_Error:
+002BDE  2  38           	sec
+002BDF  2               PDSetEOF_Return:
+002BDF  2  7A FA 68     	RESTORE_AXY
+002BE2  2  60           	rts
+002BE3  2               
+002BE3  2               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+002BE3  2               ; Directory Routines
+002BE3  2               
+002BE3  2               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+002BE3  2               ; PDReadDirectory
+002BE3  2               PDReadDirectory:
+002BE3  2  48 DA 5A     	SAVE_AXY
+002BE6  2               
+002BE6  2  9C 7E 2F     	stz PDActiveEntries
+002BE9  2               
+002BE9  2  A9 02        	lda #2
+002BEB  2  8D 7D 2F     	sta PDBlockEntries
+002BEE  2               
+002BEE  2  A0 0A        	ldy #10
+002BF0  2  B1 19        	lda (PDPARAM0),y
+002BF2  2  85 1E        	sta POINTER+1
+002BF4  2  88           	dey
+002BF5  2  B1 19        	lda (PDPARAM0),y
+002BF7  2  85 1D        	sta POINTER
+002BF9  2               
+002BF9  2  A0 23        	ldy #$23
+002BFB  2  B1 1D        	lda (POINTER),y
+002BFD  2  8D 78 2F     	sta PDEntryLength
+002C00  2               
+002C00  2  C8           	iny
+002C01  2  B1 1D        	lda (POINTER),y
+002C03  2  8D 79 2F     	sta PDEntriesPerBlock
+002C06  2               
+002C06  2  C8           	iny
+002C07  2  B1 1D        	lda (POINTER),y
+002C09  2  8D 7A 2F     	sta PDFileCount
+002C0C  2               
+002C0C  2  C8           	iny
+002C0D  2  B1 1D        	lda (POINTER),y
+002C0F  2  8D 7B 2F     	sta PDFileCount+1
+002C12  2               
+002C12  2  A9 04        	lda #4
+002C14  2  18           	clc
+002C15  2  6D 78 2F     	adc PDEntryLength
+002C18  2  8D 7C 2F     	sta PDEntryPointer
+002C1B  2               
+002C1B  2               PDReadDirectory_EntryLoop:
+002C1B  2               ; Check if we're done with the entries.
+002C1B  2  AD 7E 2F     	lda PDActiveEntries
+002C1E  2  CD 7A 2F     	cmp PDFileCount
+002C21  2  90 03        	bcc PDReadDirectory_ProcessEntry
+002C23  2               
+002C23  2  4C A6 2D     	jmp PDReadDirectory_EntryDone
+002C26  2               
+002C26  2               PDReadDirectory_ProcessEntry:
+002C26  2               ; Skip if first byte is 0
+002C26  2  AC 7C 2F     	ldy PDEntryPointer
+002C29  2  B1 1D        	lda (POINTER),y
+002C2B  2  C9 00        	cmp #0
+002C2D  2  D0 03        	bne PDReadDirectory_GetStorageAndName
+002C2F  2  4C 79 2D     	jmp PDReadDirectory_NextEntry
+002C32  2               
+002C32  2               PDReadDirectory_GetStorageAndName:
+002C32  2  AC 7C 2F     	ldy PDEntryPointer
+002C35  2               
+002C35  2  B1 1D        	lda (POINTER),y
+002C37  2  29 F0        	and #$f0
+002C39  2  4A           	lsr
+002C3A  2  4A           	lsr
+002C3B  2  4A           	lsr
+002C3C  2  4A           	lsr
+002C3D  2  8D D7 2F     	sta PDDirEntry_StorageType
+002C40  2  B1 1D        	lda (POINTER),y
+002C42  2  29 0F        	and #$0f
+002C44  2  8D D8 2F     	sta PDDirEntry_NameLength
+002C47  2               
+002C47  2               ; Skip if StorageType or NameLength are 0
+002C47  2  AD D7 2F     	lda PDDirEntry_StorageType
+002C4A  2  C9 00        	cmp #0
+002C4C  2  D0 03        	bne PDReadDirectory_CheckNameLength
+002C4E  2  4C 79 2D     	jmp PDReadDirectory_NextEntry
+002C51  2               
+002C51  2               PDReadDirectory_CheckNameLength:
+002C51  2  AD D8 2F     	lda PDDirEntry_NameLength
+002C54  2  C9 00        	cmp #0
+002C56  2  D0 03        	bne PDReadDirectory_InitBlockPopulate
+002C58  2  4C 79 2D     	jmp PDReadDirectory_NextEntry
+002C5B  2               
+002C5B  2               ; Populate DirEntry block
+002C5B  2               PDReadDirectory_InitBlockPopulate:
+002C5B  2  C8           	iny
+002C5C  2  A2 00        	ldx #0
+002C5E  2               
+002C5E  2               ; File Name
+002C5E  2               PDReadDirectory_PopulateNameField:
+002C5E  2  EC D8 2F     	cpx PDDirEntry_NameLength
+002C61  2  F0 0B        	beq PDReadDirectory_LoadFields
+002C63  2               
+002C63  2               PDReadDirectory_LoadChar:
+002C63  2  B1 1D        	lda (POINTER),y
+002C65  2  09 80        	ora #$80
+002C67  2  9D D9 2F     	sta PDDirEntry_FileName,x
+002C6A  2               
+002C6A  2  C8           	iny
+002C6B  2  E8           	inx
+002C6C  2  80 F0        	bra PDReadDirectory_PopulateNameField
+002C6E  2               
+002C6E  2               PDReadDirectory_LoadFields:
+002C6E  2  A9 10        	lda #$10
+002C70  2  18           	clc
+002C71  2  6D 7C 2F     	adc PDEntryPointer
+002C74  2  A8           	tay
+002C75  2               
+002C75  2               ; File Type
+002C75  2  B1 1D        	lda (POINTER),y
+002C77  2  8D E8 2F     	sta PDDirEntry_FileType
+002C7A  2               
+002C7A  2               ; Key Pointer
+002C7A  2  C8           	iny
+002C7B  2  B1 1D        	lda (POINTER),y
+002C7D  2  8D E9 2F     	sta PDDirEntry_KeyPointer
+002C80  2  C8           	iny
+002C81  2  B1 1D        	lda (POINTER),y
+002C83  2  8D EA 2F     	sta PDDirEntry_KeyPointer+1
+002C86  2               
+002C86  2               ; Blocks Used
+002C86  2  C8           	iny
+002C87  2  B1 1D        	lda (POINTER),y
+002C89  2  8D EB 2F     	sta PDDirEntry_BlocksUsed
+002C8C  2  C8           	iny
+002C8D  2  B1 1D        	lda (POINTER),y
+002C8F  2  8D EC 2F     	sta PDDirEntry_BlocksUsed+1
+002C92  2               
+002C92  2               ; EOF
+002C92  2  C8           	iny
+002C93  2  B1 1D        	lda (POINTER),y
+002C95  2  8D ED 2F     	sta PDDirEntry_EOF
+002C98  2  C8           	iny
+002C99  2  B1 1D        	lda (POINTER),y
+002C9B  2  8D EE 2F     	sta PDDirEntry_EOF+1
+002C9E  2  C8           	iny
+002C9F  2  B1 1D        	lda (POINTER),y
+002CA1  2  8D EF 2F     	sta PDDirEntry_EOF+2
+002CA4  2               
+002CA4  2               ; Creation Date
+002CA4  2  C8           	iny
+002CA5  2  B1 1D        	lda (POINTER),y
+002CA7  2  8D F0 2F     	sta PDDirEntry_CreationDate
+002CAA  2  C8           	iny
+002CAB  2  B1 1D        	lda (POINTER),y
+002CAD  2  8D F1 2F     	sta PDDirEntry_CreationDate+1
+002CB0  2               
+002CB0  2               ; Creation Time
+002CB0  2  C8           	iny
+002CB1  2  B1 1D        	lda (POINTER),y
+002CB3  2  8D F2 2F     	sta PDDirEntry_CreationTime
+002CB6  2  C8           	iny
+002CB7  2  B1 1D        	lda (POINTER),y
+002CB9  2  8D F3 2F     	sta PDDirEntry_CreationTime+1
+002CBC  2               
+002CBC  2               ; Version
+002CBC  2  C8           	iny
+002CBD  2  B1 1D        	lda (POINTER),y
+002CBF  2  8D F4 2F     	sta PDDirEntry_Version
+002CC2  2               
+002CC2  2               ; Minimum Version
+002CC2  2  C8           	iny
+002CC3  2  B1 1D        	lda (POINTER),y
+002CC5  2  8D F5 2F     	sta PDDirEntry_MinVersion
+002CC8  2               
+002CC8  2               ; Access
+002CC8  2  C8           	iny
+002CC9  2  B1 1D        	lda (POINTER),y
+002CCB  2  8D F6 2F     	sta PDDirEntry_Access
+002CCE  2               
+002CCE  2               ; Aux Type
+002CCE  2  C8           	iny
+002CCF  2  B1 1D        	lda (POINTER),y
+002CD1  2  8D F7 2F     	sta PDDirEntry_AuxType
+002CD4  2  C8           	iny
+002CD5  2  B1 1D        	lda (POINTER),y
+002CD7  2  8D F8 2F     	sta PDDirEntry_AuxType+1
+002CDA  2               
+002CDA  2               ; Modification Date
+002CDA  2  C8           	iny
+002CDB  2  B1 1D        	lda (POINTER),y
+002CDD  2  8D F9 2F     	sta PDDirEntry_ModificationDate
+002CE0  2  C8           	iny
+002CE1  2  B1 1D        	lda (POINTER),y
+002CE3  2  8D FA 2F     	sta PDDirEntry_ModificationDate+1
+002CE6  2               
+002CE6  2               ; Modification Time
+002CE6  2  C8           	iny
+002CE7  2  B1 1D        	lda (POINTER),y
+002CE9  2  8D FB 2F     	sta PDDirEntry_ModificationTime
+002CEC  2  C8           	iny
+002CED  2  B1 1D        	lda (POINTER),y
+002CEF  2  8D FC 2F     	sta PDDirEntry_ModificationTime+1
+002CF2  2               
+002CF2  2               ; Header Pointer
+002CF2  2  C8           	iny
+002CF3  2  B1 1D        	lda (POINTER),y
+002CF5  2  8D FD 2F     	sta PDDirEntry_HeaderPointer
+002CF8  2  C8           	iny
+002CF9  2  B1 1D        	lda (POINTER),y
+002CFB  2  8D FE 2F     	sta PDDirEntry_HeaderPointer+1
+002CFE  2               
+002CFE  2               ; Render File Type String
+002CFE  2  AE FF 2F     	ldx PDDirEntry_FileTypeStr
+002D01  2               
+002D01  2  A0 01        	ldy #1
+002D03  2  A2 00        	ldx #0
+002D05  2               PDReadDirectory_FindFileTypeInTable:
+002D05  2  EC 35 33     	cpx PDFileTypes
+002D08  2  F0 2D        	beq PDReadDirectory_TypeNotFound
+002D0A  2               
+002D0A  2  B9 35 33     	lda PDFileTypes,y
+002D0D  2  CD E8 2F     	cmp PDDirEntry_FileType
+002D10  2  F0 06        	beq PDReadDirectory_FoundType
+002D12  2               
+002D12  2  C8           	iny
+002D13  2  C8           	iny
+002D14  2  C8           	iny
+002D15  2  E8           	inx
+002D16  2  80 ED        	bra PDReadDirectory_FindFileTypeInTable
+002D18  2               
+002D18  2               PDReadDirectory_FoundType:
+002D18  2  C8           	iny
+002D19  2  B9 35 33     	lda PDFileTypes,y
+002D1C  2  85 FA        	sta POINTER2
+002D1E  2  C8           	iny
+002D1F  2  B9 35 33     	lda PDFileTypes,y
+002D22  2  85 FB        	sta POINTER2+1
+002D24  2               
+002D24  2  A0 00        	ldy #0
+002D26  2  A2 00        	ldx #0
+002D28  2               PDReadDirectory_RenderFileTypeStr:
+002D28  2  B1 FA        	lda (POINTER2),y
+002D2A  2  C9 00        	cmp #0
+002D2C  2  F0 2D        	beq PDReadDirectory_SetupCallback
+002D2E  2               
+002D2E  2  09 80        	ora #$80
+002D30  2  9D FF 2F     	sta PDDirEntry_FileTypeStr,x
+002D33  2  E8           	inx
+002D34  2  C8           	iny
+002D35  2  80 F1        	bra PDReadDirectory_RenderFileTypeStr
+002D37  2               
+002D37  2               PDReadDirectory_TypeNotFound:
+002D37  2  A9 A4        	lda #$a4
+002D39  2  8D FF 2F     	sta PDDirEntry_FileTypeStr
+002D3C  2  A2 01        	ldx #1
+002D3E  2  AD C9 2F     	lda PDFileInfo_FileType
+002D41  2  48           	pha
+002D42  2  4A           	lsr
+002D43  2  4A           	lsr
+002D44  2  4A           	lsr
+002D45  2  4A           	lsr
+002D46  2  20 4A 2D     	jsr PDReadDirectory_ConvByte
+002D49  2  68           	pla
+002D4A  2               PDReadDirectory_ConvByte:
+002D4A  2  29 0F        	and #$0f
+002D4C  2  09 B0        	ora #$b0
+002D4E  2  C9 BA        	cmp #$ba
+002D50  2  90 04        	bcc PDReadDirectory_RenderByte
+002D52  2  69 06            adc #$06
+002D54  2  80 05            bra PDReadDirectory_SetupCallback
+002D56  2               
+002D56  2               PDReadDirectory_RenderByte:
+002D56  2  9D FF 2F     	sta PDDirEntry_FileTypeStr,x
+002D59  2  E8           	inx
+002D5A  2  60           	rts
+002D5B  2               
+002D5B  2               PDReadDirectory_SetupCallback:
+002D5B  2  A9 00        	lda #0
+002D5D  2  9D FF 2F     	sta PDDirEntry_FileTypeStr,x
+002D60  2               
+002D60  2               ; Call User Callback
+002D60  2               
+002D60  2  A5 1B        	lda PDPARAM2
+002D62  2  8D 71 2D     	sta PDReadDirectory_UserCallback+1
+002D65  2  A5 1C        	lda PDPARAM3
+002D67  2  8D 72 2D     	sta PDReadDirectory_UserCallback+2
+002D6A  2               
+002D6A  2  A5 1E        	lda POINTER+1
+002D6C  2  48           	pha
+002D6D  2  A5 1D        	lda POINTER
+002D6F  2  48           	pha
+002D70  2               
+002D70  2               PDReadDirectory_UserCallback:
+002D70  2  20 FF FF     	jsr $FFFF		; Modified to address passed in PDPARAM2
+002D73  2               
+002D73  2  68           	pla
+002D74  2  85 1D        	sta POINTER
+002D76  2  68           	pla
+002D77  2  85 1E        	sta POINTER+1
+002D79  2               
+002D79  2               PDReadDirectory_NextEntry:
+002D79  2  EE 7E 2F     	inc PDActiveEntries
+002D7C  2               
+002D7C  2  AD 79 2F     	lda PDEntriesPerBlock
+002D7F  2  CD 7D 2F     	cmp PDBlockEntries
+002D82  2  F0 10        	beq PDReadDirectory_NextBlock
+002D84  2               
+002D84  2  AD 7C 2F     	lda PDEntryPointer
+002D87  2  18           	clc
+002D88  2  6D 78 2F     	adc PDEntryLength
+002D8B  2  8D 7C 2F     	sta PDEntryPointer
+002D8E  2  EE 7D 2F     	inc PDBlockEntries
+002D91  2  4C 1B 2C     	jmp PDReadDirectory_EntryLoop
+002D94  2               
+002D94  2               PDReadDirectory_NextBlock:
+002D94  2  20 51 2A     	jsr PDReadFile
+002D97  2  B0 13        	bcs PDReadDirectory_Error
+002D99  2               
+002D99  2  A9 01        	lda #$01
+002D9B  2  8D 7D 2F     	sta PDBlockEntries
+002D9E  2  A9 04        	lda #$04
+002DA0  2  8D 7C 2F     	sta PDEntryPointer
+002DA3  2               
+002DA3  2  4C 1B 2C     	jmp PDReadDirectory_EntryLoop
+002DA6  2               
+002DA6  2               PDReadDirectory_EntryDone:
+002DA6  2  7A FA 68     	RESTORE_AXY
+002DA9  2  18           	clc
+002DAA  2  80 01        	bra PDReadDirectory_Return
+002DAC  2               
+002DAC  2               PDReadDirectory_Error:
+002DAC  2  38           	sec
+002DAD  2               PDReadDirectory_Return:
+002DAD  2  60           	rts
+002DAE  2               
+002DAE  1               
+002DAE  1               ; Data
+002DAE  1               .include "parameters.s"
+002DAE  2               ;
+002DAE  2               ;  parameters.s
+002DAE  2               ;  Prodos MLI Parameter Blocks
+002DAE  2               ;
+002DAE  2               
+002DAE  2               ; Housekeeping Parameters
+002DAE  2               
+002DAE  2               ;; CREATE
+002DAE  2               MLICreateParam:
+002DAE  2  07           	.byte 7                ; PARAM_COUNT
+002DAF  2  FF FF        	.addr $FFFF            ; PATHNAME
+002DB1  2  FF           	.byte $FF              ; ACCESS
+002DB2  2  FF           	.byte $FF              ; FILE_TYPE
+002DB3  2  FF FF        	.addr $FFFF            ; AUX_TYPE
+002DB5  2  FF           	.byte $FF              ; STORAGE_TYPE
+002DB6  2  FF FF        	.addr $FFFF            ; CREATE_DATE
+002DB8  2  FF FF        	.addr $FFFF            ; CREATE_TIME
+002DBA  2               
+002DBA  2               ;; DESTROY
+002DBA  2               MLIDestroyParam:
+002DBA  2  01           	.byte 1                ; PARAM_COUNT
+002DBB  2  FF FF        	.addr $FFFF            ; PATHNAME
+002DBD  2               
+002DBD  2               ;; RENAME
+002DBD  2               MLIRenameParam:
+002DBD  2  02           	.byte 2                ; PARAM_COUNT
+002DBE  2  FF FF        	.addr $FFFF            ; PATHNAME
+002DC0  2  FF FF        	.addr $FFFF            ; NEW_PATHNAME
+002DC2  2               
+002DC2  2               ;; SET_FILE_INFO
+002DC2  2               MLISetFileInfoParam:
+002DC2  2  07           	.byte 7                ; PARAM_COUNT
+002DC3  2  FF FF        	.addr $FFFF            ; PATHNAME
+002DC5  2  FF           	.byte $FF              ; ACCESS
+002DC6  2  FF           	.byte $FF              ; FILE_TYPE
+002DC7  2  FF FF        	.addr $FFFF            ; AUX_TYPE
+002DC9  2  xx xx xx     	.res 3                 ; NULL
+002DCC  2  FF FF        	.addr $FFFF            ; MOD_DATE
+002DCE  2  FF FF        	.addr $FFFF            ; MOD_TIME
+002DD0  2               
+002DD0  2               ;; GET_FILE_INFO
+002DD0  2               MLIGetFileInfoParam:
+002DD0  2  0A           	.byte $A               ; PARAM_COUNT
+002DD1  2  FF FF        	.addr $FFFF            ; PATHNAME
+002DD3  2  xx           	.res 1                 ; ACCESS (RESULT)
+002DD4  2  xx           	.res 1                 ; FILE_TYPE (RESULT)
+002DD5  2  xx xx        	.res 2                 ; AUX_TYPE (RESULT)
+002DD7  2  xx           	.res 1                 ; STORAGE_TYPE (RESULT)
+002DD8  2  xx xx        	.res 2                 ; BLOCKS USED (RESULT)
+002DDA  2  xx xx        	.res 2                 ; MOD_DATE (RESULT)
+002DDC  2  xx xx        	.res 2                 ; MOD_TIME (RESULT)
+002DDE  2  xx xx        	.res 2                 ; CREATE_DATE (RESULT)
+002DE0  2  xx xx        	.res 2                 ; CREATE_TIME (RESULT)
+002DE2  2               
+002DE2  2               ;; ON_LINE
+002DE2  2               MLIOnlineParam:
+002DE2  2  02           	.byte 2                ; PARAM_COUINT
+002DE3  2  FF           	.byte $FF              ; UNIT_NUM
+002DE4  2  xx xx xx xx  	.res 256               ; DATA_BUFFER (RESULT)
+002DE8  2  xx xx xx xx  
+002DEC  2  xx xx xx xx  
+002EE4  2               
+002EE4  2               ;; SET_PREFIX
+002EE4  2               MLISetPrefixParam:
+002EE4  2  01           	.byte 1                ; PARAM_COUNT
+002EE5  2  FF FF        	.addr $FFFF            ; PATHNAME
+002EE7  2               
+002EE7  2               ;; GET_PREFIX
+002EE7  2               MLIGetPrefixParam:
+002EE7  2  01           	.byte 1                ; PARAM_COUNT
+002EE8  2  xx xx xx xx  	.res 64                ; DATA_BUFFER (RESULT)
+002EEC  2  xx xx xx xx  
+002EF0  2  xx xx xx xx  
+002F28  2               
+002F28  2               ; Filing Parameters
+002F28  2               
+002F28  2               ;; OPEN
+002F28  2               MLIOpenParam:
+002F28  2  03           	.byte 3                ; PARAM_COUNT
+002F29  2  FF FF        	.addr $FFFF            ; PATHNAME
+002F2B  2  FF FF        	.addr $FFFF            ; IO_BUFFER
+002F2D  2  xx           	.res 1                 ; REFNUM (Result)
+002F2E  2               
+002F2E  2               ;; NEWLINE
+002F2E  2               MLINewlineParam:
+002F2E  2  03           	.byte 3                ; PARAM_COUNT
+002F2F  2  FF           	.byte $FF              ; REF_NUM
+002F30  2  FF           	.byte $FF              ; ENABLE_MASK
+002F31  2  FF           	.byte $FF              ; NEWLINE_CHAR
+002F32  2               
+002F32  2               ;; READ
+002F32  2               ;; WRITE
+002F32  2               MLIReadWriteParam:
+002F32  2  04           	.byte 4                ; PARAM_COUNT
+002F33  2  FF           	.byte $FF              ; REF_NUM
+002F34  2  FF FF        	.addr $FFFF            ; DATA_BUFFER
+002F36  2  xx xx        	.res 2                 ; REQUEST_COUNT
+002F38  2  xx xx        	.res 2                 ; TRANS_COUNT (RESULT)
+002F3A  2               
+002F3A  2               ;; CLOSE
+002F3A  2               ;; FLUSH
+002F3A  2               MLICloseFlushParam:
+002F3A  2  01           	.byte 1                ; PARAM_COUNT
+002F3B  2  FF           	.byte $FF              ; REF_NUM
+002F3C  2               
+002F3C  2               ;; SET_MARK
+002F3C  2               ;; GET_MARK
+002F3C  2               ;; SET_EOF
+002F3C  2               ;; GET_EOF
+002F3C  2               MLIGetSetMarkEOFParam:
+002F3C  2  02           	.byte 2                ; PARAM_COUNT
+002F3D  2  FF           	.byte $FF              ; REF_NUM
+002F3E  2  FF FF FF     	.byte $FF,$FF,$FF      ; POSITION/EOF (RESULT)
+002F41  2               
+002F41  2               ;; SET_BUF
+002F41  2               ;; GET_BUF
+002F41  2               MLIGetSetBufParam:
+002F41  2  02           	.byte 2                ; PARAM_COUNT
+002F42  2  FF           	.byte $FF              ; REF_NUM
+002F43  2  FF FF        	.addr $FFFF            ; IO_BUFFER
+002F45  2               
+002F45  2               ; System Call Parameters
+002F45  2               
+002F45  2               ;; ALLOC_INTERRUPT
+002F45  2               MLIAllocInterruptParam:
+002F45  2  02           	.byte 2                ; PARAM_COUNT
+002F46  2  xx           	.res 1                 ; INT_NUM (RESULT)
+002F47  2  FF FF        	.addr $FFFF            ; INT_CODE
+002F49  2               
+002F49  2               ;; DEALLOC_INTERRUPT
+002F49  2               MLIDeallocInterruptParam:
+002F49  2  01           	.byte 1                ; PARAM_COUNT
+002F4A  2  FF           	.byte $FF              ; INT_NUM
+002F4B  2               
+002F4B  2               ; Direct Disk Access Call Parameters
+002F4B  2               
+002F4B  2               ;; READ_BLOCK
+002F4B  2               ;; WRITE_BLOCK
+002F4B  2               MLIReadWriteBlockParam:
+002F4B  2  03           	.byte 3                ; PARAM_COUNT
+002F4C  2  FF           	.byte $FF              ; UNIT_NUM
+002F4D  2  FF FF        	.addr $FFFF            ; DATA_BUFFER
+002F4F  2  FF FF        	.addr $FFFF            ; BLOCK_NUM
+002F51  2               
+002F51  1               .include "vars.s"
+002F51  2               ;
+002F51  2               ;  vars.s
+002F51  2               ;  Variables for PDos
+002F51  2               ;
+002F51  2               
+002F51  2               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+002F51  2               ; "Private" Variables
+002F51  2               ; Internally used variables, applications should not depend
+002F51  2               ; on any of these. (62 bytes)
+002F51  2               MLILo:
+002F51  2  00             .byte 0
+002F52  2               MLIHi:
+002F52  2  00             .byte 0
+002F53  2               MLIAddr:
+002F53  2  FF FF          .addr $FFFF
+002F55  2               MLIDigit:
+002F55  2  00             .byte 0
+002F56  2               MLIValue:
+002F56  2  00             .byte 0
+002F57  2               MLILead0:
+002F57  2  00             .byte 0
+002F58  2               MLIIndex:
+002F58  2  00             .byte 0
+002F59  2               MLIConvStr:
+002F59  2  xx xx xx xx    .res 4
+002F5D  2               MLICurrPage:
+002F5D  2  00             .byte 0
+002F5E  2               MLICurrByte:
+002F5E  2  00             .byte 0
+002F5F  2               MLIPageStart:
+002F5F  2  00             .byte 0
+002F60  2               MLIPageEnd:
+002F60  2  00             .byte 0
+002F61  2               MLIFileRefNum:
+002F61  2  00             .byte 0
+002F62  2               MLITransCount:
+002F62  2  00 00          .word $0000
+002F64  2               MLIReadCount:
+002F64  2  00 00          .word $0000
+002F66  2               
+002F66  2               PDFileStruct:
+002F66  2  00 00          .addr $0000     ; File Struct
+002F68  2               PDFilePathAddr:
+002F68  2  00 00          .addr $0000     ; Pointer to Filepath
+002F6A  2               PDFileLocation:
+002F6A  2  00 00          .addr $0000     ; Pointer to R/W Destination
+002F6C  2               PDRefNumber:
+002F6C  2  00             .byte 0         ; Reference Number
+002F6D  2               PDByteCount:
+002F6D  2  00 00          .word 0
+002F6F  2               PDReadCount:
+002F6F  2  00             .byte 0
+002F70  2               PDReadSize:
+002F70  2  00 00 00       .byte 0,0,0
+002F73  2               PDRemainingBytes:
+002F73  2  00 00 00       .byte 0,0,0
+002F76  2               PDFileBufferScratch:
+002F76  2  00 00          .addr $0000     ; Prodos 1024-byte I/O Buffer Pointer
+002F78  2               PDEntryLength:
+002F78  2  00             .byte 0
+002F79  2               PDEntriesPerBlock:
+002F79  2  00             .byte 0
+002F7A  2               PDFileCount:
+002F7A  2  00 00          .word 0
+002F7C  2               PDEntryPointer:
+002F7C  2  00             .byte 0
+002F7D  2               PDBlockEntries:
+002F7D  2  02             .byte 2
+002F7E  2               PDActiveEntries:
+002F7E  2  00             .byte 0
+002F7F  2               
+002F7F  2               ; Tables
+002F7F  2               MLIPositionTable:
+002F7F  2  01             .byte %00000001
+002F80  2  02             .byte %00000010
+002F81  2  04             .byte %00000100
+002F82  2  08             .byte %00001000
+002F83  2  10             .byte %00010000
+002F84  2  20             .byte %00100000
+002F85  2  40             .byte %01000000
+002F86  2  80             .byte %10000000
+002F87  2               MLIReversePositionTable:
+002F87  2  80             .byte %10000000
+002F88  2  40             .byte %01000000
+002F89  2  20             .byte %00100000
+002F8A  2  10             .byte %00010000
+002F8B  2  08             .byte %00001000
+002F8C  2  04             .byte %00000100
+002F8D  2  02             .byte %00000010
+002F8E  2  01             .byte %00000001
+002F8F  2               
+002F8F  2               MLITable10:
+002F8F  2  01             .byte 1
+002F90  2  0A             .byte 10
+002F91  2  64             .byte 100
+002F92  2               
+002F92  2               ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+002F92  2               ; Public Variables
+002F92  2               ; Variables that are useful for library users. (109 bytes)
+002F92  2               
+002F92  2               ; MLI Status
+002F92  2               MLIError:
+002F92  2  00             .byte 0
+002F93  2               MLIErrorString:
+002F93  2  xx xx xx xx    .res 35
+002F97  2  xx xx xx xx  
+002F9B  2  xx xx xx xx  
+002FB6  2               MLIDateString:
+002FB6  2  xx xx xx xx    .res 10
+002FBA  2  xx xx xx xx  
+002FBE  2  xx xx        
+002FC0  2               MLITimeString:
+002FC0  2  xx xx xx xx    .res 6
+002FC4  2  xx xx        
+002FC6  2               
+002FC6  2               ; File Info Struct
+002FC6  2               PDFileInfo:
+002FC6  2               PDFileInfo_Path:
+002FC6  2  FF FF          .addr $FFFF            ; PATHNAME
+002FC8  2               PDFileInfo_Access:
+002FC8  2  xx             .res 1                 ; ACCESS
+002FC9  2               PDFileInfo_FileType:
+002FC9  2  xx             .res 1                 ; FILE_TYPE
+002FCA  2               PDFileInfo_AuxType:
+002FCA  2  xx xx          .res 2                 ; AUX_TYPE
+002FCC  2               PDFileInfo_StorageType:
+002FCC  2  xx             .res 1                 ; STORAGE_TYPE
+002FCD  2               PDFileInfo_BlocksUsed:
+002FCD  2  xx xx          .res 2                 ; BLOCKS USED
+002FCF  2               PDFileInfo_ModDate:
+002FCF  2  xx xx          .res 2                 ; MOD_DATE
+002FD1  2               PDFileInfo_ModTime:
+002FD1  2  xx xx          .res 2                 ; MOD_TIME
+002FD3  2               PDFileInfo_CreateDate:
+002FD3  2  xx xx          .res 2                 ; CREATE_DATE
+002FD5  2               PDFileInfo_CreateTime:
+002FD5  2  xx xx          .res 2                 ; CREATE_TIME
+002FD7  2               
+002FD7  2               ; Current Directory Entry Struct
+002FD7  2               PDDirEntry:
+002FD7  2               PDDirEntry_StorageType:
+002FD7  2  00             .byte 0
+002FD8  2               PDDirEntry_NameLength:
+002FD8  2  00             .byte 0
+002FD9  2               PDDirEntry_FileName:
+002FD9  2  xx xx xx xx    .res 15
+002FDD  2  xx xx xx xx  
+002FE1  2  xx xx xx xx  
+002FE8  2               PDDirEntry_FileType:
+002FE8  2  00             .byte 0
+002FE9  2               PDDirEntry_KeyPointer:
+002FE9  2  00 00          .addr $0000
+002FEB  2               PDDirEntry_BlocksUsed:
+002FEB  2  00 00          .word 0
+002FED  2               PDDirEntry_EOF:
+002FED  2  00 00 00       .byte 0,0,0
+002FF0  2               PDDirEntry_CreationDate:
+002FF0  2  00 00          .word 0
+002FF2  2               PDDirEntry_CreationTime:
+002FF2  2  00 00          .word 0
+002FF4  2               PDDirEntry_Version:
+002FF4  2  00             .byte 0
+002FF5  2               PDDirEntry_MinVersion:
+002FF5  2  00             .byte 0
+002FF6  2               PDDirEntry_Access:
+002FF6  2  00             .byte 0
+002FF7  2               PDDirEntry_AuxType:
+002FF7  2  00 00          .word 0
+002FF9  2               PDDirEntry_ModificationDate:
+002FF9  2  00 00          .word 0
+002FFB  2               PDDirEntry_ModificationTime:
+002FFB  2  00 00          .word 0
+002FFD  2               PDDirEntry_HeaderPointer:
+002FFD  2  00 00          .addr $0000
+002FFF  2               PDDirEntry_FileTypeStr:
+002FFF  2  xx xx xx xx    .res 4
+003003  2               
+003003  1               .include "strings.s"
+003003  2               ;
+003003  2               ;  strings.s
+003003  2               ;  String tables
+003003  2               ;
+003003  2               
+003003  2               ; Maps error code to address of error string.
+003003  2               MLIErrorMessages:
+003003  2  00           	.byte $00
+003004  2  5E 30        	.addr NOERROR
+003006  2  01           	.byte $01
+003007  2  67 30        	.addr BADCALL
+003009  2  04           	.byte $04
+00300A  2  7E 30        	.addr BADPCOUNT
+00300C  2  25           	.byte $25
+00300D  2  9E 30        	.addr INTVECFUL
+00300F  2  27           	.byte $27
+003010  2  BA 30        	.addr IOERR
+003012  2  28           	.byte $28
+003013  2  C4 30        	.addr NODEVICE
+003015  2  2B           	.byte $2B
+003016  2  E2 30        	.addr NOWRITE
+003018  2  2E           	.byte $2E
+003019  2  F7 30        	.addr DISKGONE
+00301B  2  40           	.byte $40
+00301C  2  05 31        	.addr BADPATHSYN
+00301E  2  42           	.byte $42
+00301F  2  1D 31        	.addr FCBTFULL
+003021  2  43           	.byte $43
+003022  2  3B 31        	.addr BADREF
+003024  2  44           	.byte $44
+003025  2  54 31        	.addr BADPATH
+003027  2  45           	.byte $45
+003028  2  63 31        	.addr BADVOL
+00302A  2  46           	.byte $46
+00302B  2  7E 31        	.addr BADFILE
+00302D  2  47           	.byte $47
+00302E  2  8D 31        	.addr DUPFILE
+003030  2  48           	.byte $48
+003031  2  A0 31        	.addr OVERRUN
+003033  2  49           	.byte $49
+003034  2  AE 31        	.addr VOLFULL
+003036  2  4A           	.byte $4A
+003037  2  C4 31        	.addr BADFRMT
+003039  2  4B           	.byte $4B
+00303A  2  DD 31        	.addr BADSTYPE
+00303C  2  4C           	.byte $4C
+00303D  2  F6 31        	.addr EOF
+00303F  2  4D           	.byte $4D
+003040  2  17 32        	.addr POSBAD
+003042  2  4E           	.byte $4E
+003043  2  2D 32        	.addr ACCERR
+003045  2  50           	.byte $50
+003046  2  3A 32        	.addr FILEOPEN
+003048  2  51           	.byte $51
+003049  2  47 32        	.addr DCNTERR
+00304B  2  52           	.byte $52
+00304C  2  5D 32        	.addr NOTPDOS
+00304E  2  53           	.byte $53
+00304F  2  6F 32        	.addr BADPARAM
+003051  2  55           	.byte $55
+003052  2  81 32        	.addr VCBTFULL
+003054  2  56           	.byte $56
+003055  2  A1 32        	.addr BADBUFADR
+003057  2  57           	.byte $57
+003058  2  B4 32        	.addr DUPVOL
+00305A  2  5A           	.byte $5A
+00305B  2  C5 32        	.addr BADBITMP
+00305D  2               ; End of Table marker
+00305D  2  FF           	.byte $FF
+00305E  2               
+00305E  2               ; MLI Error Strings
+00305E  2  4E 4F 20 45  NOERROR:     .asciiz "NO ERROR"
+003062  2  52 52 4F 52  
+003066  2  00           
+003067  2  42 41 44 20  BADCALL:     .asciiz "BAD SYSTEM CALL NUMBER"
+00306B  2  53 59 53 54  
+00306F  2  45 4D 20 43  
+00307E  2  42 41 44 20  BADPCOUNT:   .asciiz "BAD SYSTEM CALL PARAMETER COUNT"
+003082  2  53 59 53 54  
+003086  2  45 4D 20 43  
+00309E  2  49 4E 54 45  INTVECFUL:   .asciiz "INTERRUPT VECTOR TABLE FULL"
+0030A2  2  52 52 55 50  
+0030A6  2  54 20 56 45  
+0030BA  2  49 2F 4F 20  IOERR:       .asciiz "I/O ERROR"
+0030BE  2  45 52 52 4F  
+0030C2  2  52 00        
+0030C4  2  4E 4F 20 44  NODEVICE:    .asciiz "NO DEVICED DETECTED/CONNECTED"
+0030C8  2  45 56 49 43  
+0030CC  2  45 44 20 44  
+0030E2  2  44 49 53 4B  NOWRITE:     .asciiz "DISK WRITE PROTECTED"
+0030E6  2  20 57 52 49  
+0030EA  2  54 45 20 50  
+0030F7  2  44 49 53 4B  DISKGONE:    .asciiz "DISK SWITCHED"
+0030FB  2  20 53 57 49  
+0030FF  2  54 43 48 45  
+003105  2  49 4E 56 41  BADPATHSYN:  .asciiz "INVALID PATHNAME SYNTAX"
+003109  2  4C 49 44 20  
+00310D  2  50 41 54 48  
+00311D  2  46 49 4C 45  FCBTFULL:    .asciiz "FILE CONTROL BLOCK TABLE FULL"
+003121  2  20 43 4F 4E  
+003125  2  54 52 4F 4C  
+00313B  2  49 4E 56 41  BADREF:      .asciiz "INVALID REFERENCE NUMBER"
+00313F  2  4C 49 44 20  
+003143  2  52 45 46 45  
+003154  2  50 41 54 48  BADPATH:     .asciiz "PATH NOT FOUND"
+003158  2  20 4E 4F 54  
+00315C  2  20 46 4F 55  
+003163  2  56 4F 4C 55  BADVOL:      .asciiz "VOLUME DIRECTORY NOT FOUND"
+003167  2  4D 45 20 44  
+00316B  2  49 52 45 43  
+00317E  2  46 49 4C 45  BADFILE:     .asciiz "FILE NOT FOUND"
+003182  2  20 4E 4F 54  
+003186  2  20 46 4F 55  
+00318D  2  44 55 50 4C  DUPFILE:     .asciiz "DUPLICATE FILENAME"
+003191  2  49 43 41 54  
+003195  2  45 20 46 49  
+0031A0  2  4F 56 45 52  OVERRUN:     .asciiz "OVERRUN ERROR"
+0031A4  2  52 55 4E 20  
+0031A8  2  45 52 52 4F  
+0031AE  2  56 4F 4C 55  VOLFULL:     .asciiz "VOLUME DIRECTORY FULL"
+0031B2  2  4D 45 20 44  
+0031B6  2  49 52 45 43  
+0031C4  2  49 4E 43 4F  BADFRMT:     .asciiz "INCOMPATIBLE FILE FORMAT"
+0031C8  2  4D 50 41 54  
+0031CC  2  49 42 4C 45  
+0031DD  2  55 4E 53 55  BADSTYPE:    .asciiz "UNSUPPORTED STORAGE TYPE"
+0031E1  2  50 50 4F 52  
+0031E5  2  54 45 44 20  
+0031F6  2  45 4E 44 20  EOF: 	     .asciiz "END OF FILE HAS BEEN ENCOUNTERED"
+0031FA  2  4F 46 20 46  
+0031FE  2  49 4C 45 20  
+003217  2  50 4F 53 49  POSBAD:      .asciiz "POSITION OUT OF RANGE"
+00321B  2  54 49 4F 4E  
+00321F  2  20 4F 55 54  
+00322D  2  41 43 43 45  ACCERR:      .asciiz "ACCESS ERROR"
+003231  2  53 53 20 45  
+003235  2  52 52 4F 52  
+00323A  2  46 49 4C 45  FILEOPEN:    .asciiz "FILE IS OPEN"
+00323E  2  20 49 53 20  
+003242  2  4F 50 45 4E  
+003247  2  44 49 52 45  DCNTERR:     .asciiz "DIRECTORY COUNT ERROR"
+00324B  2  43 54 4F 52  
+00324F  2  59 20 43 4F  
+00325D  2  4E 4F 54 20  NOTPDOS:     .asciiz "NOT A PRODOS DISK"
+003261  2  41 20 50 52  
+003265  2  4F 44 4F 53  
+00326F  2  49 4E 56 41  BADPARAM:    .asciiz "INVALID PARAMETER"
+003273  2  4C 49 44 20  
+003277  2  50 41 52 41  
+003281  2  56 4F 4C 55  VCBTFULL:    .asciiz "VOLUME CONTROL BLOCK TABLE FULL"
+003285  2  4D 45 20 43  
+003289  2  4F 4E 54 52  
+0032A1  2  42 41 44 20  BADBUFADR:   .asciiz "BAD BUFFER ADDRESS"
+0032A5  2  42 55 46 46  
+0032A9  2  45 52 20 41  
+0032B4  2  44 55 50 4C  DUPVOL:      .asciiz "DUPLICATE VOLUME"
+0032B8  2  49 43 41 54  
+0032BC  2  45 20 56 4F  
+0032C5  2  42 49 54 20  BADBITMP:    .asciiz "BIT MAP DISK ADDRESS IS IMPOSSIBLE"
+0032C9  2  4D 41 50 20  
+0032CD  2  44 49 53 4B  
+0032E8  2  4D 4C 49 20  ERRNOTFND:   .asciiz "MLI ERROR CODE NOT FOUND"
+0032EC  2  45 52 52 4F  
+0032F0  2  52 20 43 4F  
+003301  2               
+003301  2               ; Month abbreviations
+003301  2               MLIMonthStrings:
+003301  2               ; Padding
+003301  2  xx xx xx xx    .res 4
+003305  2  4A 41 4E 00    .asciiz "JAN"
+003309  2  46 45 42 00    .asciiz "FEB"
+00330D  2  4D 41 52 00    .asciiz "MAR"
+003311  2  41 50 52 00    .asciiz "APR"
+003315  2  4D 41 59 00    .asciiz "MAY"
+003319  2  4A 55 4E 00    .asciiz "JUN"
+00331D  2  4A 55 4C 00    .asciiz "JUL"
+003321  2  41 55 47 00    .asciiz "AUG"
+003325  2  53 45 50 00    .asciiz "SEP"
+003329  2  4F 43 54 00    .asciiz "OCT"
+00332D  2  4E 4F 56 00    .asciiz "NOV"
+003331  2  44 45 43 00    .asciiz "DEC"
+003335  2               
+003335  2               PDFileTypes:
+003335  2               ; Number of Entries
+003335  2  06             .byte $06
+003336  2               
+003336  2  04             .byte $04
+003337  2  48 33          .addr FILETYPE_TXT
+003339  2  05             .byte $05
+00333A  2  4C 33          .addr FILETYPE_PAS
+00333C  2  06             .byte $06
+00333D  2  50 33          .addr FILETYPE_BIN
+00333F  2  0F             .byte $0F
+003340  2  54 33          .addr FILETYPE_DIR
+003342  2  FC             .byte $FC
+003343  2  58 33          .addr FILETYPE_BAS
+003345  2  FF             .byte $FF
+003346  2  5C 33          .addr FILETYPE_SYS
+003348  2               
+003348  2               
+003348  2  54 58 54 00  FILETYPE_TXT:	.asciiz "TXT"
+00334C  2  50 41 53 00  FILETYPE_PAS:	.asciiz "PAS"
+003350  2  42 49 4E 00  FILETYPE_BIN:	.asciiz "BIN"
+003354  2  44 49 52 00  FILETYPE_DIR:	.asciiz "DIR"
+003358  2  42 41 53 00  FILETYPE_BAS:	.asciiz "BAS"
+00335C  2  53 59 53 00  FILETYPE_SYS:	.asciiz "SYS"
+003360  2               
+003360  2  3C 4E 4F 20  NODATE: .asciiz "<NO DATE>"
+003364  2  44 41 54 45  
+003368  2  3E 00        
+00336A  2               
+00336A  1               
+00336A  1               ; Suppress some linker warnings - Must be the last thing in the file
+00336A  1               .SEGMENT "ZPSAVE"
+00336A  1               .SEGMENT "EXEHDR"
+00336A  1               .SEGMENT "STARTUP"
+00336A  1               .SEGMENT "INIT"
+00336A  1               .SEGMENT "LOWCODE"
+00336A  1               
